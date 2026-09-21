@@ -347,6 +347,8 @@
   .controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
   .ctrl-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.28); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; backdrop-filter: blur(6px); }
   .ctrl-btn:hover { background: rgba(0,0,0,0.4); }
+  .ctrl-btn.loop-on { color: var(--accent-blue); border-color: var(--accent-blue); }
+  .ctrl-btn.loop-off { opacity: 0.4; }
   .bpm-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 6px 12px; backdrop-filter: blur(6px); }
   .bpm-group .bpm-unit-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; }
   .bpm-group input[type="range"] { width: 88px; margin: 0; accent-color: var(--accent-blue); }
@@ -736,6 +738,7 @@
         <div class="phrase-guide" id="phraseGuideChip">C <strong>MAJOR</strong> &nbsp;/&nbsp; <span id="phraseChip"></span></div>
         <div class="controls">
           <button class="ctrl-btn" id="playPause">❚❚</button>
+          <button class="ctrl-btn loop-on" id="loopToggle" title="ループ再生 ON">🔁</button>
           <div class="bpm-group" id="bpmGroup">
             <span class="bpm-unit-label">BPM</span>
             <input type="range" id="bpmRange" min="60" max="240" step="1" value="120" />
@@ -783,6 +786,7 @@
   const frameEl = document.getElementById('frame');
   const progressFill = document.getElementById('progressFill');
   const playPauseBtn = document.getElementById('playPause');
+  const loopToggleBtn = document.getElementById('loopToggle');
   const bpmRange = document.getElementById('bpmRange');
   const bpmInput = document.getElementById('bpmInput');
   const audioToggle = document.getElementById('audioToggle');
@@ -845,6 +849,8 @@
   let bpm = 120;
   let speedMultiplier = 1; // bpm / BASE_BPM
   let playing = true;
+  let loopEnabled = true;
+  let phraseFinished = false; // ループOFFでフレーズ末尾まで到達した状態
 
   let stepStartTs = 0;
   let stepDuration = 0;
@@ -1004,6 +1010,15 @@
     const nextIndex = (index + 1) % steps.length;
 
     if (nextIndex === 0) {
+      if (!loopEnabled) {
+        // ループOFF：最後のノーツを鳴らし終えたところで再生を止める
+        clearTimeout(stepTimer);
+        clearTimeout(toneTimer);
+        playing = false;
+        phraseFinished = true;
+        playPauseBtn.textContent = '▶';
+        return;
+      }
       // フレーズの先頭に戻る（リピート）：最後の音の後に本来続くはずの「ノーツ＋インターバル」分の
       // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
       const blankDur = leadMs() + durationOf(0);
@@ -1060,6 +1075,15 @@
   // イベント
   // ============================================================
   playPauseBtn.addEventListener('click', () => {
+    if (!playing && phraseFinished) {
+      // ループOFFで末尾まで再生し終えた状態から再度再生：先頭からやり直す
+      phraseFinished = false;
+      playing = true;
+      playPauseBtn.textContent = '❚❚';
+      resetStage(0);
+      beginStep();
+      return;
+    }
     playing = !playing;
     playPauseBtn.textContent = playing ? '❚❚' : '▶';
     if (playing) {
@@ -1079,6 +1103,13 @@
       barRemainingOnPause = Math.max(barTotalMs - (performance.now() - barStartTs), 0);
       freezeProgressBar();
     }
+  });
+
+  loopToggleBtn.addEventListener('click', () => {
+    loopEnabled = !loopEnabled;
+    loopToggleBtn.classList.toggle('loop-on', loopEnabled);
+    loopToggleBtn.classList.toggle('loop-off', !loopEnabled);
+    loopToggleBtn.title = loopEnabled ? 'ループ再生 ON' : 'ループ再生 OFF';
   });
 
   function setBpm(rawValue, { syncRange = true, syncInput = true } = {}) {
@@ -1110,6 +1141,9 @@
   audioToggle.title = '音をON';
 
   resetPlaybackBtn.addEventListener('click', () => {
+    playing = true;
+    phraseFinished = false;
+    playPauseBtn.textContent = '❚❚';
     resetStage(0);
     beginStep();
   });
@@ -1152,6 +1186,9 @@
     if (keys.length < 2) return;
     PHRASE = keys;
     PHRASE_HOLDS = holds;
+    playing = true;
+    phraseFinished = false;
+    playPauseBtn.textContent = '❚❚';
     resetStage(0);
     beginStep();
   }
