@@ -895,8 +895,8 @@
     const nextIndex = (index + 1) % steps.length;
 
     if (nextIndex === 0) {
-      // フレーズの先頭に戻る（リピート）：黒画面を他のノーツと同じ長さ・横スライドで一度だけ挟む
-      const blankDur = BASE_NOTE_MS / speedMultiplier;
+      // フレーズの先頭に戻る（リピート）：黒画面をインターバルと同じ長さ・横スライドで一度だけ挟む
+      const blankDur = BASE_LEAD_MS / speedMultiplier;
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
