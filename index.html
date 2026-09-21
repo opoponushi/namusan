@@ -300,9 +300,24 @@
   .controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
   .ctrl-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.28); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; backdrop-filter: blur(6px); }
   .ctrl-btn:hover { background: rgba(0,0,0,0.4); }
-  .speed-group { display: flex; gap: 5px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 4px; backdrop-filter: blur(6px); }
-  .speed-btn { padding: 6px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer; }
-  .speed-btn.active { background: var(--ink); color: #111; }
+  .bpm-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 6px 12px; backdrop-filter: blur(6px); }
+  .bpm-group .bpm-unit-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; }
+  .bpm-group input[type="range"] { width: 88px; margin: 0; accent-color: var(--accent-blue); }
+  .bpm-group input[type="number"] {
+    width: 42px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    padding: 3px 2px;
+    font-family: inherit;
+    -moz-appearance: textfield;
+  }
+  .bpm-group input[type="number"]::-webkit-outer-spin-button,
+  .bpm-group input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .clean-btn {
     font-size: 10px;
     cursor: pointer;
@@ -612,10 +627,10 @@
         <div class="phrase-guide" id="phraseGuideChip">C <strong>MAJOR</strong> &nbsp;/&nbsp; <span id="phraseChip"></span></div>
         <div class="controls">
           <button class="ctrl-btn" id="playPause">❚❚</button>
-          <div class="speed-group" id="speedGroup">
-            <div class="speed-btn" data-speed="0.5">0.5×</div>
-            <div class="speed-btn active" data-speed="1">1×</div>
-            <div class="speed-btn" data-speed="1.6">1.6×</div>
+          <div class="bpm-group" id="bpmGroup">
+            <span class="bpm-unit-label">BPM</span>
+            <input type="range" id="bpmRange" min="60" max="240" step="1" value="120" />
+            <input type="number" id="bpmInput" min="60" max="240" step="1" value="120" inputmode="numeric" />
           </div>
           <button class="ctrl-btn" id="audioToggle">🔇</button>
         </div>
@@ -667,7 +682,8 @@
   const frameEl = document.getElementById('frame');
   const progressFill = document.getElementById('progressFill');
   const playPauseBtn = document.getElementById('playPause');
-  const speedGroup = document.getElementById('speedGroup');
+  const bpmRange = document.getElementById('bpmRange');
+  const bpmInput = document.getElementById('bpmInput');
   const cleanToggle = document.getElementById('cleanToggle');
   const audioToggle = document.getElementById('audioToggle');
   const bottomHideable = document.getElementById('bottomHideable');
@@ -693,7 +709,9 @@
   let PHRASE = parsePhrase(phraseInput.value);
   let steps = [];
   let index = 0;
-  let speedMultiplier = 1;
+  const BASE_BPM = 120;
+  let bpm = 120;
+  let speedMultiplier = 1; // bpm / BASE_BPM
   let playing = true;
 
   let stepStartTs = 0;
@@ -852,13 +870,22 @@
     }
   });
 
-  speedGroup.addEventListener('click', (e) => {
-    const btn = e.target.closest('.speed-btn');
-    if (!btn) return;
-    speedMultiplier = parseFloat(btn.dataset.speed);
-    [...speedGroup.children].forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    if (playing) beginStep(false); // 現在のステップを新しい速度で測り直す
+  function setBpm(rawValue, { syncRange = true, syncInput = true } = {}) {
+    let value = Number(rawValue);
+    if (!Number.isFinite(value)) value = bpm;
+    const clamped = Math.min(240, Math.max(60, Math.round(value)));
+    bpm = clamped;
+    speedMultiplier = bpm / BASE_BPM;
+    if (syncRange) bpmRange.value = clamped;
+    if (syncInput) bpmInput.value = clamped;
+    if (playing) beginStep(false); // 現在のステップを新しいテンポで測り直す
+  }
+
+  bpmRange.addEventListener('input', () => {
+    setBpm(bpmRange.value, { syncRange: false });
+  });
+  bpmInput.addEventListener('change', () => {
+    setBpm(bpmInput.value); // 確定時にレンジ外の値は補正して表示にも反映する
   });
 
   audioToggle.addEventListener('click', () => {
