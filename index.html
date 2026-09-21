@@ -397,10 +397,11 @@
   .switch input:checked + .track { background: rgba(59,130,246,0.55); }
   .switch input:checked + .track .knob { transform: translateX(16px); background: var(--accent-blue); }
 
-  /* インターバルのテキスト情報を非表示にするトグル用（左上の半音数字も含む） */
+  /* インターバルのテキスト情報を非表示にするトグル用（左上の半音数字・フレーズ番号も含む） */
   .frame.hide-iv-text .iv-text,
   .frame.hide-iv-text .iv-dir,
-  .frame.hide-iv-text .iv-num { display: none; }
+  .frame.hide-iv-text .iv-num,
+  .frame.hide-iv-text .deg-label { display: none; }
 </style>
 
 
