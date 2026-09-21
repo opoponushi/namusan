@@ -228,7 +228,7 @@
     position: absolute;
     opacity: 0;
     /* 芯はくっきり、両端だけ短くフェードさせて線の鋭さを保つ */
-    background: linear-gradient(to bottom,
+    background: linear-gradient(var(--p-grad-dir, to bottom),
       transparent 0%,
       var(--p-color, rgba(255,255,255,0.95)) 12%,
       var(--p-color, rgba(255,255,255,0.95)) 88%,
@@ -237,9 +237,10 @@
     transform-origin: 50% 50%;
     will-change: transform, opacity;
   }
-  /* 傾きなし。ライン自身の縦軸に沿ってまっすぐ流れる */
+  /* 傾きなし。ライン自身の軸に沿ってまっすぐ流れる */
   .iv-particle.up   { animation: ivPartUp   var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
   .iv-particle.down { animation: ivPartDown var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
+  .iv-particle.side { animation: ivPartSide var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
 
   @keyframes ivPartUp {
     from { transform: translateY(var(--p-travel, 260px)) scaleY(0.85); opacity: 0; }
@@ -252,6 +253,12 @@
     18%  { opacity: var(--p-op, 0.9); }
     72%  { opacity: var(--p-op, 0.9); }
     to   { transform: translateY(var(--p-travel, 260px)) scaleY(1.25); opacity: 0; }
+  }
+  @keyframes ivPartSide {
+    from { transform: translateX(var(--p-travel, 260px)) scaleX(0.85); opacity: 0; }
+    18%  { opacity: var(--p-op, 0.9); }
+    72%  { opacity: var(--p-op, 0.9); }
+    to   { transform: translateX(calc(var(--p-travel, 260px) * -1)) scaleX(1.25); opacity: 0; }
   }
 
   .iv-text { position: relative; z-index: 2; }
@@ -520,22 +527,27 @@
       ['rgba(160,170,255,0.88)', 'rgba(120,130,255,0.6)'],
       ['rgba(140,150,250,0.85)', 'rgba(110,120,255,0.55)'],
     ];
+    const horizontal = dir === 'side';
     let html = '';
     for (let i = 0; i < count; i++) {
       const r = (n) => Math.random() * n;
-      const left = -4 + r(108);                      // 横位置はランダムに散らす
-      const top = -30 + r(160);                      // 縦の初期位置も散らす
-      const w = (0.9 + r(1.1)).toFixed(2);           // 0.9〜2.0px の細い線
-      const h = (lenBase * (0.3 + r(1.3))).toFixed(0);    // 長さは大きくばらつかせる
+      const len = (lenBase * (0.3 + r(1.3))).toFixed(0);   // 線の長さは大きくばらつかせる
+      const thin = (0.9 + r(1.1)).toFixed(2);              // 0.9〜2.0px の細い線
       const travel = (travelBase * (0.7 + r(0.6))).toFixed(0);
       const delay = Math.round(r(durationMs * 0.3));
       const dur = Math.round(durationMs * (0.6 + r(0.45)));
       const op = (0.32 + r(0.62)).toFixed(2);
       const [color, glow] = palette[Math.floor(r(palette.length))];
+      // 縦流れ：横位置をランダムに散らし、線は縦長。横流れ：縦位置をランダムに散らし、線は横長
+      const left = horizontal ? -30 + r(160) : -4 + r(108);
+      const top = horizontal ? -4 + r(108) : -30 + r(160);
+      const w = horizontal ? len : thin;
+      const h = horizontal ? thin : len;
+      const gradDir = horizontal ? 'to right' : 'to bottom';
       html += `<span class="iv-particle ${dir}" style="`
         + `left:${left.toFixed(1)}%;top:${top.toFixed(1)}%;`
         + `width:${w}px;height:${h}px;`
-        + `--p-color:${color};--p-glow:${glow};`
+        + `--p-color:${color};--p-glow:${glow};--p-grad-dir:${gradDir};`
         + `--p-travel:${travel}px;--p-delay:${delay}ms;--p-dur:${dur}ms;--p-op:${op};`
         + `"></span>`;
     }
@@ -552,6 +564,8 @@
     }
     const iv = step.iv;
     const dir = step.up ? 'up' : 'down';
+    // 線状の光のみ：音高が変わらない（ユニゾン）場合は上下ではなく横方向に流す
+    const particleDir = iv.st === 0 ? 'side' : dir;
     // ===== 半音距離との連動（大袈裟版）=====
     // t = 0（ユニゾン）〜1（オクターブ）。1半音は控えめ、12半音は劇的に見えるよう全方向に効かせる
     const t = iv.st / 12;
@@ -590,7 +604,7 @@
     el.innerHTML = `
       <div class="iv-iris ${dir}"></div>
       <div class="iv-spec ${dir}"></div>
-      ${particlesHTML(iv, dir, Math.round(durationMs || 320))}
+      ${particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
       <div class="iv-dir">${step.up ? '▲ 上昇' : '▼ 下降'}</div>
       <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
       <div class="iv-text ${dir}">
