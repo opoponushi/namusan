@@ -17,9 +17,12 @@
   }
   #app-root * { box-sizing: border-box; }
 
-  .brand { text-align: center; }
+  .brand { text-align: center; order: 2; }
   .brand .eyebrow-label { font-size: 10px; letter-spacing: 0.32em; color: #8B87A8; margin-bottom: 4px; }
   .brand .title { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
+  /* 縦積み時もタイトルはコントローラー（panel-box）の直上に来るよう順序を入れ替える */
+  .frame { order: 1; }
+  .panel-box { order: 3; }
 
   /* ===== 横幅が十分な画面ではビュー（frame）とコントローラー（panel-box）を
      横並びにする。タイトル（brand）はコントローラー側の上に配置する ===== */
