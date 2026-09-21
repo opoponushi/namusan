@@ -752,6 +752,7 @@
   let stepDuration = 0;
   let remainingOnPause = null;
   let stepTimer = null;
+  let toneTimer = null; // アイコンのフェードイン完了に合わせて音を遅らせるためのタイマー
 
   let currentPanel = null;
   let pending = null;      // { outgoing, incoming }
@@ -860,15 +861,21 @@
     return (steps[i].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
   }
 
-  function beginStep(withTone) {
+  function beginStep(withTone, toneDelayMs) {
     clearTimeout(stepTimer);
+    clearTimeout(toneTimer);
     stepDuration = durationOf(index);
     stepStartTs = performance.now();
     remainingOnPause = null;
 
     const s = steps[index];
     if (withTone !== false && s.type === 'note') {
-      playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92);
+      const delay = Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6));
+      if (delay > 0) {
+        toneTimer = setTimeout(() => playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92), delay);
+      } else {
+        playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92);
+      }
     }
     bottomHideable.classList.toggle('hidden', s.type === 'interval');
     startProgressBar(stepDuration);
@@ -893,14 +900,17 @@
     // スライド時間はそのステップの持ち時間を超えないよう抑える
     const nextDur = (steps[nextIndex].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
+    // アイコンのフェードイン（遅延＋自身の時間）が完了するタイミングに音を合わせる
+    const iconTotalMs = (!isUnison && steps[nextIndex].type === 'note') ? slideMs * 2 : 0;
 
     slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
-    beginStep();
+    beginStep(true, iconTotalMs);
   }
 
   function resetStage(startIndex) {
     clearTimeout(stepTimer);
+    clearTimeout(toneTimer);
     finalizeSlide();
     steps = buildSteps(PHRASE);
     index = startIndex || 0;
@@ -928,6 +938,7 @@
       remainingOnPause = null;
     } else {
       clearTimeout(stepTimer);
+      clearTimeout(toneTimer);
       remainingOnPause = Math.max(stepDuration - (performance.now() - stepStartTs), 0);
       freezeProgressBar();
     }
