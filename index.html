@@ -533,7 +533,9 @@
 
   // 垂直に流れる線状の光を生成。半音距離が大きいほど「多く・長く・速く」流れる
   function particlesHTML(iv, dir, durationMs) {
-    const p = Math.pow(iv.st / 12, 0.85);
+    // ユニゾン（横向き）は半音距離が常に0で強さが最小になってしまうため、
+    // 縦と同じ見た目になるよう横向きは常に最大強度（縦の12半音相当）にする
+    const p = dir === 'side' ? 1 : Math.pow(iv.st / 12, 0.85);
     const count = Math.round((34 + p * 86) * PARTICLE_SCALE);  // 本数     34 → 120
     const travelBase = 160 + p * 460;                          // 移動距離 160px → 620px
     const lenBase = 45 + p * 190;                              // 線の長さ 45px → 235px
