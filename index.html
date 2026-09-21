@@ -387,13 +387,10 @@
     border-bottom: 1px solid #202544;
   }
   .panel-box label { font-size: 10.5px; color: #8B87A8; }
-  .phrase-row { display: flex; gap: 8px; align-items: flex-start; }
-  .phrase-row .field { flex: 1; min-width: 0; }
-  .panel-box input[type="text"] { width: 100%; margin-top: 6px; background: #050710; border: 1px solid #2E3358; border-radius: 8px; color: #F0EDFF; padding: 9px 11px; font-size: 14px; font-family: inherit; }
+  .phrase-row-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
   .reset-btn {
-    margin-top: 6px;
     flex-shrink: 0;
-    width: 38px; height: 38px;
+    width: 32px; height: 32px;
     border-radius: 8px;
     border: 1px solid #2E3358;
     background: #050710;
@@ -405,6 +402,52 @@
     font-size: 15px;
   }
   .reset-btn:hover { color: #F0EDFF; border-color: #3a4270; }
+
+  /* ===== フレーズ入力：ドラッグ＆ドロップのパレット＋8グリッド ===== */
+  .phrase-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: #050710;
+    border: 1px solid #2E3358;
+    border-radius: 8px;
+  }
+  .phrase-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .phrase-slot {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    border: 1px dashed #2E3358;
+    background: #050710;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .phrase-slot.filled { border-style: solid; border-color: #2E3358; }
+  .phrase-slot.drag-over { border-color: var(--accent-blue); background: rgba(59,130,246,0.15); }
+  .phrase-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px; height: 32px;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid #2E3358;
+    color: #F0EDFF;
+    font-size: 13px;
+    cursor: grab;
+    user-select: none;
+  }
+  .phrase-chip:active { cursor: grabbing; }
+  .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
+  .phrase-chip.dragging { opacity: 0.35; }
   .panel-box .hint { font-size: 9.5px; color: #5B5878; margin-top: 4px; }
   .panel-box .row { display: flex; gap: 14px; }
   .panel-box .row > div { flex: 1; }
@@ -492,9 +535,6 @@
       moonThin:  `<path d="M58 18 A32 32 0 1 0 58 82 A38 38 0 1 1 58 18 Z" ${common}/>`,
     };
     return `<svg width="92" height="92" viewBox="0 0 100 100">${shapes[shape] || ''}</svg>`;
-  }
-  function parsePhrase(input) {
-    return input.split(/[\s,、]+/).filter(Boolean).filter(t => DEG[t]);
   }
 
   // 宇宙背景（スターフィールド）を一度だけ生成。ノートパネルのすりガラス越しに透けて見える
@@ -703,14 +743,13 @@
         </div>
       </div>
       <div>
-        <label>フレーズ入力（度数を半角スペース区切り）</label>
-        <div class="phrase-row">
-          <div class="field">
-            <input type="text" id="phraseInput" value="① ③ ② ④ ③ ⑤ ④ ⑥" />
-          </div>
+        <div class="phrase-row-header">
+          <label>フレーズ入力（最大8ノーツ・ドラッグ＆ドロップで配置／並べ替え／外に出して削除）</label>
           <button class="reset-btn" id="resetPlayback" title="リセットして再生">↺</button>
         </div>
-        <div class="hint">使用可能：① ♭2 ② ♭3 ③ ④ ♭5 ⑤ ♭6 ⑥ ♭7 ⑦ ⑧（上昇＝下へ／下降＝上へスライド）</div>
+        <div class="phrase-palette" id="phrasePalette"></div>
+        <div class="phrase-grid" id="phraseGrid"></div>
+        <div class="hint">上昇＝下へ／下降＝上へスライド</div>
       </div>
       <div>
         <label id="ratioLabel">音:インターバル比率：4:1（500ms / 125ms）</label>
@@ -747,7 +786,8 @@
   const audioToggle = document.getElementById('audioToggle');
   const bottomHideable = document.getElementById('bottomHideable');
   const phraseChip = document.getElementById('phraseChip');
-  const phraseInput = document.getElementById('phraseInput');
+  const phrasePalette = document.getElementById('phrasePalette');
+  const phraseGrid = document.getElementById('phraseGrid');
   const resetPlaybackBtn = document.getElementById('resetPlayback');
   const ivTextToggle = document.getElementById('ivTextToggle');
   const ratioRange = document.getElementById('ratioRange');
@@ -774,7 +814,10 @@
   let PARTICLE_SCALE = 1;
   const SLIDE_BASE_MS = 260;
 
-  let PHRASE = parsePhrase(phraseInput.value);
+  // フレーズ入力：8グリッド（null=空）にドラッグ＆ドロップで度数を配置する
+  const DEFAULT_PHRASE = ['①', '③', '②', '④', '③', '⑤', '④', '⑥'];
+  let gridSlots = DEFAULT_PHRASE.concat(new Array(8).fill(null)).slice(0, 8);
+  let PHRASE = gridSlots.filter(Boolean);
   let steps = [];
   let index = 0;
   const BASE_BPM = 120;
@@ -1051,13 +1094,90 @@
     frameEl.classList.toggle('hide-iv-text', !ivTextToggle.checked);
   });
 
-  phraseInput.addEventListener('change', () => {
-    const parsed = parsePhrase(phraseInput.value);
+  // ============================================================
+  // フレーズ入力：パレットからのドラッグ＆ドロップで8グリッドに配置
+  // ============================================================
+  function renderPhraseUI() {
+    phrasePalette.innerHTML = DEGREES.map(d =>
+      `<div class="phrase-chip" draggable="true" data-source="palette" data-key="${d.key}">${d.key}</div>`
+    ).join('');
+    phraseGrid.innerHTML = gridSlots.map((key, i) => `
+      <div class="phrase-slot${key ? ' filled' : ''}" data-index="${i}">
+        ${key ? `<div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${key}">${key}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function applyGridPhrase() {
+    const parsed = gridSlots.filter(Boolean);
     if (parsed.length < 2) return;
     PHRASE = parsed;
     resetStage(0);
     beginStep();
+  }
+
+  let phraseDragSource = null; // { from: 'palette'|'grid', index?, key }
+
+  phrasePalette.addEventListener('dragstart', (e) => {
+    const chip = e.target.closest('.phrase-chip');
+    if (!chip) return;
+    phraseDragSource = { from: 'palette', key: chip.dataset.key };
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', chip.dataset.key);
   });
+
+  phraseGrid.addEventListener('dragstart', (e) => {
+    const chip = e.target.closest('.phrase-chip');
+    if (!chip) return;
+    phraseDragSource = { from: 'grid', index: Number(chip.dataset.index), key: chip.dataset.key };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', chip.dataset.key);
+    chip.classList.add('dragging');
+  });
+
+  phraseGrid.addEventListener('dragover', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (!slot || !phraseDragSource) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = phraseDragSource.from === 'palette' ? 'copy' : 'move';
+    slot.classList.add('drag-over');
+  });
+  phraseGrid.addEventListener('dragleave', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (slot) slot.classList.remove('drag-over');
+  });
+  phraseGrid.addEventListener('drop', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (!slot || !phraseDragSource) return;
+    e.preventDefault();
+    const targetIndex = Number(slot.dataset.index);
+    if (phraseDragSource.from === 'palette') {
+      gridSlots[targetIndex] = phraseDragSource.key;
+    } else {
+      const srcIndex = phraseDragSource.index;
+      if (srcIndex !== targetIndex) {
+        // 左右の入れ替え
+        const tmp = gridSlots[targetIndex];
+        gridSlots[targetIndex] = gridSlots[srcIndex];
+        gridSlots[srcIndex] = tmp;
+      }
+    }
+    phraseDragSource = null;
+    renderPhraseUI();
+    applyGridPhrase();
+  });
+
+  document.addEventListener('dragend', (e) => {
+    // グリッドの外（有効なドロップ先以外）に離した場合はそのマスを削除する
+    if (phraseDragSource && phraseDragSource.from === 'grid' && e.dataTransfer.dropEffect === 'none') {
+      gridSlots[phraseDragSource.index] = null;
+      renderPhraseUI();
+      applyGridPhrase();
+    }
+    phraseDragSource = null;
+  });
+
+  renderPhraseUI();
 
   ratioRange.addEventListener('input', () => {
     ratioIndex = Number(ratioRange.value);
