@@ -403,7 +403,7 @@
   }
   .reset-btn:hover { color: #F0EDFF; border-color: #3a4270; }
 
-  /* ===== フレーズ入力：ドラッグ＆ドロップのパレット＋8グリッド ===== */
+  /* ===== フレーズ入力：ドラッグ＆ドロップのパレット＋32グリッド（8列×4段） ===== */
   .phrase-palette {
     display: flex;
     flex-wrap: wrap;
@@ -431,6 +431,7 @@
     transition: background 120ms ease, border-color 120ms ease;
   }
   .phrase-slot.filled { border-style: solid; border-color: #2E3358; }
+  .phrase-slot.tied { border-style: dashed; }
   .phrase-slot.drag-over { border-color: var(--accent-blue); background: rgba(59,130,246,0.15); }
   .phrase-chip {
     display: flex;
@@ -448,6 +449,7 @@
   .phrase-chip:active { cursor: grabbing; }
   .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
   .phrase-chip.dragging { opacity: 0.35; }
+  .phrase-chip-tied { opacity: 0.32; cursor: default; }
   .panel-box .hint { font-size: 9.5px; color: #5B5878; margin-top: 4px; }
   .panel-box .row { display: flex; gap: 14px; }
   .panel-box .row > div { flex: 1; }
@@ -566,10 +568,10 @@
     container.innerHTML = html;
   }
 
-  function buildSteps(phrase) {
+  function buildSteps(phrase, holds) {
     const steps = [];
     phrase.forEach((key, i) => {
-      steps.push({ type: 'note', key });
+      steps.push({ type: 'note', key, hold: (holds && holds[i]) || 0 });
       if (i < phrase.length - 1) {
         const to = phrase[i + 1];
         const up = DEG[to].semitone >= DEG[key].semitone;
@@ -744,7 +746,7 @@
       </div>
       <div>
         <div class="phrase-row-header">
-          <label>フレーズ入力（最大8ノーツ・ドラッグ＆ドロップで配置／並べ替え／外に出して削除）</label>
+          <label>フレーズ入力（最大32ノーツ・ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを伸ばすタイとして機能）</label>
           <button class="reset-btn" id="resetPlayback" title="リセットして再生">↺</button>
         </div>
         <div class="phrase-palette" id="phrasePalette"></div>
@@ -814,10 +816,25 @@
   let PARTICLE_SCALE = 1;
   const SLIDE_BASE_MS = 260;
 
-  // フレーズ入力：8グリッド（null=空）にドラッグ＆ドロップで度数を配置する
+  // フレーズ入力：32グリッド（8列×4段・null=空）にドラッグ＆ドロップで度数を配置する
+  // 空白マスは「タイ（伸ばし）」として機能し、直前のノーツの表示時間を空白の数だけ延長する
   const DEFAULT_PHRASE = ['①', '③', '②', '④', '③', '⑤', '④', '⑥'];
-  let gridSlots = DEFAULT_PHRASE.concat(new Array(8).fill(null)).slice(0, 8);
-  let PHRASE = gridSlots.filter(Boolean);
+  const GRID_SIZE = 32;
+  let gridSlots = DEFAULT_PHRASE.concat(new Array(GRID_SIZE - DEFAULT_PHRASE.length).fill(null));
+  function computePhraseAndHolds() {
+    const keys = [];
+    const holds = [];
+    gridSlots.forEach((key) => {
+      if (key) {
+        keys.push(key);
+        holds.push(0);
+      } else if (holds.length > 0) {
+        holds[holds.length - 1]++;
+      }
+    });
+    return { keys, holds };
+  }
+  let { keys: PHRASE, holds: PHRASE_HOLDS } = computePhraseAndHolds();
   let steps = [];
   let index = 0;
   const BASE_BPM = 120;
@@ -940,7 +957,8 @@
   // タイミング制御（各ステップは自分自身の持ち時間だけを使う）
   // ============================================================
   function durationOf(i) {
-    return steps[i].type === 'note' ? noteMs() : leadMs();
+    const s = steps[i];
+    return s.type === 'note' ? noteMs() * (1 + (s.hold || 0)) : leadMs();
   }
 
   function beginStep(withTone, toneDelayMs) {
@@ -964,7 +982,7 @@
       // 合わせた長さで1本につなげて表示する
       const nextIdx = (index + 1) % steps.length;
       const intervalMs = nextIdx === 0
-        ? (noteMs() + leadMs()) // 次がリピート（黒画面）：黒画面自体の長さ分
+        ? (leadMs() + durationOf(0)) // 次がリピート（黒画面）：黒画面自体の長さ分
         : (steps[nextIdx].type === 'interval' ? durationOf(nextIdx) : 0);
       barTotalMs = stepDuration + intervalMs;
       barStartTs = stepStartTs;
@@ -984,7 +1002,7 @@
     if (nextIndex === 0) {
       // フレーズの先頭に戻る（リピート）：最後の音の後に本来続くはずの「ノーツ＋インターバル」分の
       // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
-      const blankDur = noteMs() + leadMs();
+      const blankDur = leadMs() + durationOf(0);
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
@@ -1021,7 +1039,7 @@
     clearTimeout(stepTimer);
     clearTimeout(toneTimer);
     finalizeSlide();
-    steps = buildSteps(PHRASE);
+    steps = buildSteps(PHRASE, PHRASE_HOLDS);
     index = startIndex || 0;
     trackEl.innerHTML = '';
     trackEl.style.transition = 'none';
@@ -1095,23 +1113,39 @@
   });
 
   // ============================================================
-  // フレーズ入力：パレットからのドラッグ＆ドロップで8グリッドに配置
+  // フレーズ入力：パレットからのドラッグ＆ドロップで32グリッドに配置（空白は直前のノーツのタイとして表示）
   // ============================================================
   function renderPhraseUI() {
     phrasePalette.innerHTML = DEGREES.map(d =>
       `<div class="phrase-chip" draggable="true" data-source="palette" data-key="${d.key}">${d.key}</div>`
     ).join('');
-    phraseGrid.innerHTML = gridSlots.map((key, i) => `
-      <div class="phrase-slot${key ? ' filled' : ''}" data-index="${i}">
-        ${key ? `<div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${key}">${key}</div>` : ''}
-      </div>
-    `).join('');
+    let lastKey = null;
+    phraseGrid.innerHTML = gridSlots.map((key, i) => {
+      if (key) {
+        lastKey = key;
+        return `
+          <div class="phrase-slot filled" data-index="${i}">
+            <div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${key}">${key}</div>
+          </div>
+        `;
+      }
+      if (lastKey) {
+        // 空白マス：直前のノーツの記号をタイ（伸ばし）の見た目として残す
+        return `
+          <div class="phrase-slot tied" data-index="${i}">
+            <div class="phrase-chip phrase-chip-tied">${lastKey}</div>
+          </div>
+        `;
+      }
+      return `<div class="phrase-slot" data-index="${i}"></div>`;
+    }).join('');
   }
 
   function applyGridPhrase() {
-    const parsed = gridSlots.filter(Boolean);
-    if (parsed.length < 2) return;
-    PHRASE = parsed;
+    const { keys, holds } = computePhraseAndHolds();
+    if (keys.length < 2) return;
+    PHRASE = keys;
+    PHRASE_HOLDS = holds;
     resetStage(0);
     beginStep();
   }
