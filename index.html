@@ -762,6 +762,11 @@
   let stepDuration = 0;
   let remainingOnPause = null;
   let stepTimer = null;
+  let stepTimerCallback = null; // 一時停止からの再開時に呼び直すコールバック
+  // 進行バー表示用：ノーツ＋続くインターバル分をまとめた長さを別途管理する
+  let barStartTs = 0;
+  let barTotalMs = 0;
+  let barRemainingOnPause = null;
   let toneTimer = null; // アイコンのフェードイン完了に合わせて音を遅らせるためのタイマー
 
   let currentPanel = null;
@@ -887,10 +892,20 @@
         playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92);
       }
     }
-    bottomHideable.classList.toggle('hidden', s.type === 'interval');
-    startProgressBar(stepDuration);
+    if (s.type === 'note') {
+      // ノーツの進行バーは、続くインターバル分も含めた長さで1本につなげて表示する
+      const nextIdx = (index + 1) % steps.length;
+      const intervalMs = (nextIdx !== 0 && steps[nextIdx].type === 'interval') ? durationOf(nextIdx) : 0;
+      barTotalMs = stepDuration + intervalMs;
+      barStartTs = stepStartTs;
+      startProgressBar(barTotalMs);
+    }
+    // インターバル中は何もしない：ノーツ開始時に張ったバーをそのまま継続させる
 
-    if (playing) stepTimer = setTimeout(onStepEnd, stepDuration);
+    if (playing) {
+      stepTimerCallback = onStepEnd;
+      stepTimer = setTimeout(stepTimerCallback, stepDuration);
+    }
   }
 
   function onStepEnd() {
@@ -903,13 +918,20 @@
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
+      stepDuration = blankDur;
+      stepStartTs = performance.now();
+      barTotalMs = blankDur;
+      barStartTs = stepStartTs;
+      remainingOnPause = null;
+      barRemainingOnPause = null;
       startProgressBar(blankDur);
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
-      stepTimer = setTimeout(() => {
+      stepTimerCallback = () => {
         resetStage(0);
         beginStep(true, 0);
-      }, blankDur);
+      };
+      stepTimer = setTimeout(stepTimerCallback, blankDur);
       return;
     }
 
@@ -951,15 +973,19 @@
     playPauseBtn.textContent = playing ? '❚❚' : '▶';
     if (playing) {
       const remaining = remainingOnPause != null ? remainingOnPause : stepDuration;
-      const pct = 100 - (remaining / stepDuration) * 100;
-      startProgressBar(remaining, pct);
-      stepTimer = setTimeout(onStepEnd, remaining);
+      const barRemaining = barRemainingOnPause != null ? barRemainingOnPause : (barTotalMs - (performance.now() - barStartTs));
+      const pct = 100 - (barRemaining / barTotalMs) * 100;
+      startProgressBar(barRemaining, pct);
+      stepTimer = setTimeout(stepTimerCallback, remaining);
       stepStartTs = performance.now() - (stepDuration - remaining);
+      barStartTs = performance.now() - (barTotalMs - barRemaining);
       remainingOnPause = null;
+      barRemainingOnPause = null;
     } else {
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
       remainingOnPause = Math.max(stepDuration - (performance.now() - stepStartTs), 0);
+      barRemainingOnPause = Math.max(barTotalMs - (performance.now() - barStartTs), 0);
       freezeProgressBar();
     }
   });
