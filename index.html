@@ -269,11 +269,25 @@
     .iv-iris, .iv-spec, .iv-particle, .panel-interval .iv-num, .panel-interval .iv-text { animation: none !important; }
     .iv-iris { opacity: 0.35; }
     .iv-particles { display: none; }
+    .glyph-wrap.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
   }
   .iv-dir { position: absolute; top: 18px; right: 20px; font-size: 11px; opacity: 0.75; letter-spacing: 0.04em; }
 
   .deg-label { font-size: 26px; font-weight: 800; color: #F3F6FF; letter-spacing: 0.04em; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
   .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
+
+  /* ===== 図形アイコンの登場アニメーション（パネル全体のスライドとは分離） =====
+     上昇：基準点より約40px下からフェードインしながら上がってくる
+     下降：その逆（上から下がってくる） */
+  .glyph-wrap.icon-enter {
+    animation-duration: var(--icon-anim-ms, 260ms);
+    animation-timing-function: cubic-bezier(.22,.9,.32,1);
+    animation-fill-mode: both;
+  }
+  .glyph-wrap.icon-enter.up   { animation-name: iconEnterUp; }
+  .glyph-wrap.icon-enter.down { animation-name: iconEnterDown; }
+  @keyframes iconEnterUp   { from { transform: translateY(40px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterDown { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
   .chip {
     background: rgba(0,0,0,0.32);
@@ -555,12 +569,14 @@
     return `<div class="iv-particles">${html}</div>`;
   }
 
-  function panelEl(step, durationMs) {
+  function panelEl(step, durationMs, iconDir, animMs) {
     const el = document.createElement('div');
     if (step.type === 'note') {
       const d = DEG[step.key];
       el.className = 'panel panel-note';
-      el.innerHTML = `<div class="glyph-wrap">${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}</div>`;
+      const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
+      const enterStyle = iconDir ? ` style="--icon-anim-ms:${Math.round(animMs || 260)}ms"` : '';
+      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}</div>`;
       return el;
     }
     const iv = step.iv;
@@ -780,7 +796,9 @@
 
   function slideTo(step, up, slideMs, stepMs, isUnison) {
     finalizeSlide(); // 前の遷移が残っていれば先に確定させる
-    const incoming = panelEl(step, stepMs);
+    // 図形アイコンの登場アニメーションはパネルのスライドとは分離して付与する（ユニゾンは対象外）
+    const iconDir = isUnison ? null : (up ? 'up' : 'down');
+    const incoming = panelEl(step, stepMs, iconDir, slideMs);
     trackEl.style.transition = 'none';
 
     if (isUnison) {
