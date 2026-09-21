@@ -689,15 +689,9 @@
         </div>
         <div class="hint">使用可能：① ♭2 ② ♭3 ③ ④ ♭5 ⑤ ♭6 ⑥ ♭7 ⑦ ⑧（上昇＝下へ／下降＝上へスライド）</div>
       </div>
-      <div class="row">
-        <div>
-          <label id="noteMsLabel">音の表示時間：900ms</label>
-          <input type="range" id="noteMsRange" min="500" max="2000" step="50" value="900" />
-        </div>
-        <div>
-          <label id="leadMsLabel">インターバル色の表示：320ms</label>
-          <input type="range" id="leadMsRange" min="200" max="800" step="10" value="320" />
-        </div>
+      <div>
+        <label id="ratioLabel">音:インターバル比率：4:1（500ms / 125ms）</label>
+        <input type="range" id="ratioRange" min="0" max="4" step="1" value="2" />
       </div>
       <div>
         <label id="irisLabel">虹彩アニメーションの強さ：100%</label>
@@ -733,17 +727,25 @@
   const phraseInput = document.getElementById('phraseInput');
   const resetPlaybackBtn = document.getElementById('resetPlayback');
   const ivTextToggle = document.getElementById('ivTextToggle');
-  const noteMsRange = document.getElementById('noteMsRange');
-  const leadMsRange = document.getElementById('leadMsRange');
+  const ratioRange = document.getElementById('ratioRange');
+  const ratioLabel = document.getElementById('ratioLabel');
   const irisRange = document.getElementById('irisRange');
   const irisLabel = document.getElementById('irisLabel');
   const particleRange = document.getElementById('particleRange');
   const particleLabel = document.getElementById('particleLabel');
-  const noteMsLabel = document.getElementById('noteMsLabel');
-  const leadMsLabel = document.getElementById('leadMsLabel');
 
-  let BASE_NOTE_MS = 900;
-  let BASE_LEAD_MS = 320;
+  // 音・インターバルの表示時間はBPMの1拍（60000/bpm ms）から導出し、
+  // 両者の比率だけをプリセット（16:1〜1:1）で選ぶ形にする
+  const RATIO_PRESETS = [16, 8, 4, 2, 1];
+  let ratioIndex = 2; // デフォルト 4:1
+  function beatMs() { return 60000 / bpm; }
+  function noteMs() { return beatMs(); }
+  function leadMs() { return beatMs() / RATIO_PRESETS[ratioIndex]; }
+  function updateRatioLabel() {
+    const r = RATIO_PRESETS[ratioIndex];
+    ratioLabel.textContent = `音:インターバル比率：${r}:1（${Math.round(noteMs())}ms / ${Math.round(leadMs())}ms）`;
+  }
+
   let IRIS_SCALE = 1;
   let PARTICLE_SCALE = 1;
   const SLIDE_BASE_MS = 260;
@@ -866,7 +868,7 @@
   // タイミング制御（各ステップは自分自身の持ち時間だけを使う）
   // ============================================================
   function durationOf(i) {
-    return (steps[i].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
+    return steps[i].type === 'note' ? noteMs() : leadMs();
   }
 
   function beginStep(withTone, toneDelayMs) {
@@ -896,7 +898,7 @@
 
     if (nextIndex === 0) {
       // フレーズの先頭に戻る（リピート）：黒画面をインターバルと同じ長さ・横スライドで一度だけ挟む
-      const blankDur = BASE_LEAD_MS / speedMultiplier;
+      const blankDur = leadMs();
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
@@ -915,7 +917,7 @@
     const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
 
     // スライド時間はそのステップの持ち時間を超えないよう抑える
-    const nextDur = (steps[nextIndex].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
+    const nextDur = steps[nextIndex].type === 'note' ? noteMs() : leadMs();
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
     // アイコンのフェードイン（遅延＋自身の時間）が完了するタイミングに音を合わせる
     const iconTotalMs = (!isUnison && steps[nextIndex].type === 'note') ? slideMs * 2 : 0;
@@ -969,6 +971,7 @@
     speedMultiplier = bpm / BASE_BPM;
     if (syncRange) bpmRange.value = clamped;
     if (syncInput) bpmInput.value = clamped;
+    updateRatioLabel(); // 音・インターバルの表示msはBPMから導出されるので表示を更新
     if (playing) beginStep(false); // 現在のステップを新しいテンポで測り直す
   }
 
@@ -1005,16 +1008,12 @@
     beginStep();
   });
 
-  noteMsRange.addEventListener('input', () => {
-    BASE_NOTE_MS = Number(noteMsRange.value);
-    noteMsLabel.textContent = `音の表示時間：${BASE_NOTE_MS}ms`;
-    if (playing && steps[index].type === 'note') beginStep(false);
+  ratioRange.addEventListener('input', () => {
+    ratioIndex = Number(ratioRange.value);
+    updateRatioLabel();
+    if (playing) beginStep(false); // 現在のステップを新しい比率で測り直す
   });
-  leadMsRange.addEventListener('input', () => {
-    BASE_LEAD_MS = Number(leadMsRange.value);
-    leadMsLabel.textContent = `インターバル色の表示：${BASE_LEAD_MS}ms`;
-    if (playing && steps[index].type === 'interval') beginStep(false);
-  });
+  updateRatioLabel();
 
   irisRange.addEventListener('input', () => {
     IRIS_SCALE = Number(irisRange.value) / 100;
