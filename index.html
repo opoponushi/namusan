@@ -893,9 +893,12 @@
       }
     }
     if (s.type === 'note') {
-      // ノーツの進行バーは、続くインターバル分も含めた長さで1本につなげて表示する
+      // ノーツの進行バーは、続くインターバル分（最後のノーツ→リピートの黒画面も含む）を
+      // 合わせた長さで1本につなげて表示する
       const nextIdx = (index + 1) % steps.length;
-      const intervalMs = (nextIdx !== 0 && steps[nextIdx].type === 'interval') ? durationOf(nextIdx) : 0;
+      const intervalMs = nextIdx === 0
+        ? (noteMs() + leadMs()) // 次がリピート（黒画面）：黒画面自体の長さ分
+        : (steps[nextIdx].type === 'interval' ? durationOf(nextIdx) : 0);
       barTotalMs = stepDuration + intervalMs;
       barStartTs = stepStartTs;
       startProgressBar(barTotalMs);
@@ -918,13 +921,10 @@
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
+      // 進行バーはリセットせず、直前のノーツ開始時に張ったバーをそのまま継続させる
       stepDuration = blankDur;
       stepStartTs = performance.now();
-      barTotalMs = blankDur;
-      barStartTs = stepStartTs;
       remainingOnPause = null;
-      barRemainingOnPause = null;
-      startProgressBar(blankDur);
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
       stepTimerCallback = () => {
