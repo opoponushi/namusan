@@ -75,6 +75,8 @@
     align-items: center;
     justify-content: center;
   }
+  /* ユニゾン（音高が変わらない）遷移用：上下ではなく左右にスライドさせる */
+  .panel.panel-h { right: auto; width: 100%; }
   .panel-note {
     /* 白よりの青、すりガラス越しに宇宙背景が透けて見える */
     background: linear-gradient(165deg, rgba(214,228,255,0.22), rgba(190,206,255,0.07));
@@ -496,6 +498,14 @@
     return nxt.type === 'interval' ? nxt.up : true;
   }
 
+  // その遷移に関わるインターバル（半音距離0＝ユニゾンかどうかの判定に使う）
+  function intervalAt(steps, i) {
+    const cur = steps[i];
+    if (cur.type === 'interval') return cur;
+    const nxt = steps[(i + 1) % steps.length];
+    return nxt.type === 'interval' ? nxt : null;
+  }
+
   // 垂直に流れる線状の光を生成。半音距離が大きいほど「多く・長く・速く」流れる
   function particlesHTML(iv, dir, durationMs) {
     const p = Math.pow(iv.st / 12, 0.85);
@@ -745,26 +755,42 @@
     trackEl.removeEventListener('transitionend', finalizeSlide);
     if (outgoing && outgoing.parentNode) outgoing.remove();
     incoming.style.top = '0';
+    incoming.style.left = '0';
+    incoming.classList.remove('panel-h');
     trackEl.style.transition = 'none';
     trackEl.style.transform = 'translateY(0)';
     void trackEl.offsetWidth;
     currentPanel = incoming;
   }
 
-  function slideTo(step, up, slideMs, stepMs) {
+  function slideTo(step, up, slideMs, stepMs, isUnison) {
     finalizeSlide(); // 前の遷移が残っていれば先に確定させる
     const incoming = panelEl(step, stepMs);
-    // 上昇：次のパネルは上（-100%）から下りてくる／下降：下（+100%）から上がってくる
-    incoming.style.top = up ? '-100%' : '100%';
-    trackEl.appendChild(incoming);
-
     trackEl.style.transition = 'none';
-    trackEl.style.transform = 'translateY(0)';
-    void trackEl.offsetWidth;
 
-    pending = { outgoing: currentPanel, incoming };
-    trackEl.style.transition = `transform ${slideMs}ms cubic-bezier(.4,0,.2,1)`;
-    trackEl.style.transform = `translateY(${up ? '100%' : '-100%'})`;
+    if (isUnison) {
+      // 音高が変わらない（ユニゾン）遷移は上下ではなく左右にスライドする
+      incoming.classList.add('panel-h');
+      incoming.style.top = '0';
+      incoming.style.left = '100%';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateX(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      trackEl.style.transition = `transform ${slideMs}ms cubic-bezier(.4,0,.2,1)`;
+      trackEl.style.transform = 'translateX(-100%)';
+    } else {
+      // 上昇：次のパネルは上（-100%）から下りてくる／下降：下（+100%）から上がってくる
+      incoming.style.top = up ? '-100%' : '100%';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateY(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      trackEl.style.transition = `transform ${slideMs}ms cubic-bezier(.4,0,.2,1)`;
+      trackEl.style.transform = `translateY(${up ? '100%' : '-100%'})`;
+    }
 
     trackEl.addEventListener('transitionend', finalizeSlide);
     pendingTimer = setTimeout(finalizeSlide, slideMs + 80);
@@ -814,13 +840,15 @@
 
   function onStepEnd() {
     const up = directionAt(steps, index);
+    const ivStep = intervalAt(steps, index);
+    const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
     const nextIndex = (index + 1) % steps.length;
 
     // スライド時間はそのステップの持ち時間を超えないよう抑える
     const nextDur = (steps[nextIndex].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
 
-    slideTo(steps[nextIndex], up, slideMs, nextDur);
+    slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
     beginStep();
   }
