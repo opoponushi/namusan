@@ -739,8 +739,9 @@
   const RATIO_PRESETS = [16, 8, 4, 2, 1];
   let ratioIndex = 2; // デフォルト 4:1
   function beatMs() { return 60000 / bpm; }
-  function noteMs() { return beatMs(); }
-  function leadMs() { return beatMs() / RATIO_PRESETS[ratioIndex]; }
+  // 音+インターバルの合計（1拍分）を固定し、比率でその内訳を分割する
+  function noteMs() { const r = RATIO_PRESETS[ratioIndex]; return beatMs() * r / (r + 1); }
+  function leadMs() { const r = RATIO_PRESETS[ratioIndex]; return beatMs() / (r + 1); }
   function updateRatioLabel() {
     const r = RATIO_PRESETS[ratioIndex];
     ratioLabel.textContent = `音:インターバル比率：${r}:1（${Math.round(noteMs())}ms / ${Math.round(leadMs())}ms）`;
