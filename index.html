@@ -77,7 +77,7 @@
   }
   /* ユニゾン（音高が変わらない）遷移用：上下ではなく左右にスライドさせる */
   .panel.panel-h { right: auto; width: 100%; }
-  .panel-note {
+  .panel-note, .panel-blank {
     /* 白よりの青、すりガラス越しに宇宙背景が透けて見える */
     background: linear-gradient(165deg, rgba(214,228,255,0.22), rgba(190,206,255,0.07));
     backdrop-filter: blur(22px) saturate(1.35);
@@ -88,8 +88,6 @@
       inset 0 -26px 46px rgba(150,180,255,0.05);
     gap: 14px;
   }
-  /* リピート時に一度だけ挟む黒画面（逆方向スライド用） */
-  .panel-blank { background: #000; }
   .panel-interval {
     align-items: flex-start;
     justify-content: flex-end;
