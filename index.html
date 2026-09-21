@@ -277,10 +277,13 @@
   .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
 
   /* ===== 図形アイコンの登場アニメーション（パネル全体のスライドとは分離） =====
+     パネルのスライドが完了するまではフェードイン前の状態で待機させ（animation-delay）、
+     スライド完了後にアイコンだけが独立して動いて見えるようにする。
      上昇：基準点より約40px下からフェードインしながら上がってくる
      下降：その逆（上から下がってくる） */
   .glyph-wrap.icon-enter {
-    animation-duration: var(--icon-anim-ms, 260ms);
+    animation-duration: var(--icon-anim-dur, 260ms);
+    animation-delay: var(--icon-anim-delay, 0ms);
     animation-timing-function: cubic-bezier(.22,.9,.32,1);
     animation-fill-mode: both;
   }
@@ -574,8 +577,10 @@
     if (step.type === 'note') {
       const d = DEG[step.key];
       el.className = 'panel panel-note';
+      // パネルのスライド（animMs）が終わってからアイコンが独立してフェードインするよう遅延させる
       const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
-      const enterStyle = iconDir ? ` style="--icon-anim-ms:${Math.round(animMs || 260)}ms"` : '';
+      const enterMs = Math.round(animMs || 260);
+      const enterStyle = iconDir ? ` style="--icon-anim-delay:${enterMs}ms;--icon-anim-dur:${enterMs}ms"` : '';
       el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}</div>`;
       return el;
     }
