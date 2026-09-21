@@ -88,6 +88,8 @@
       inset 0 -26px 46px rgba(150,180,255,0.05);
     gap: 14px;
   }
+  /* リピート時に一度だけ挟む黒画面（逆方向スライド用） */
+  .panel-blank { background: #000; }
   .panel-interval {
     align-items: flex-start;
     justify-content: flex-end;
@@ -574,6 +576,10 @@
 
   function panelEl(step, durationMs, iconDir, animMs) {
     const el = document.createElement('div');
+    if (step.type === 'blank') {
+      el.className = 'panel panel-blank';
+      return el;
+    }
     if (step.type === 'note') {
       const d = DEG[step.key];
       el.className = 'panel panel-note';
@@ -743,6 +749,7 @@
   let PHRASE = parsePhrase(phraseInput.value);
   let steps = [];
   let index = 0;
+  let lastUp = true; // 直近の遷移方向（リピート時の逆方向演出に使う）
   const BASE_BPM = 120;
   let bpm = 120;
   let speedMultiplier = 1; // bpm / BASE_BPM
@@ -887,13 +894,21 @@
     const nextIndex = (index + 1) % steps.length;
 
     if (nextIndex === 0) {
-      // フレーズの先頭に戻る（リピート）：アニメーションなしで即切り替え
-      resetStage(0);
-      beginStep();
+      // フレーズの先頭に戻る（リピート）：黒画面を直近と逆方向に一度だけ挟んでから先頭へ
+      const reverseUp = !lastUp;
+      const blankMs = Math.min(SLIDE_BASE_MS / speedMultiplier, durationOf(0) * 0.7);
+      slideTo({ type: 'blank' }, reverseUp, blankMs, blankMs, false);
+      clearTimeout(stepTimer);
+      clearTimeout(toneTimer);
+      stepTimer = setTimeout(() => {
+        resetStage(0);
+        beginStep(true, 0);
+      }, blankMs + 160);
       return;
     }
 
     const up = directionAt(steps, index);
+    lastUp = up;
     const ivStep = intervalAt(steps, index);
     const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
 
