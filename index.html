@@ -344,8 +344,9 @@
   .bottom-hideable { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; transition: opacity 200ms ease; }
   .progress-track { width: 62%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
   .progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 999px; }
-  .controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
-  .ctrl-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.28); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; backdrop-filter: blur(6px); }
+  .controls { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .controls-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .ctrl-btn { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.28); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; backdrop-filter: blur(6px); }
   .ctrl-btn:hover { background: rgba(0,0,0,0.4); }
   .ctrl-btn.loop-on { color: var(--accent-blue); border-color: var(--accent-blue); }
   .ctrl-btn.loop-off { opacity: 0.4; }
@@ -404,6 +405,11 @@
     font-size: 15px;
   }
   .reset-btn:hover { color: #F0EDFF; border-color: #3a4270; }
+  .reset-btn:disabled { opacity: 0.35; cursor: default; }
+  .reset-btn:disabled:hover { color: #8B87A8; border-color: #2E3358; }
+  .reset-btn.small { width: 22px; height: 22px; font-size: 12px; border-radius: 6px; }
+  .phrase-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .row-count-label { font-size: 10.5px; color: #8B87A8; min-width: 22px; text-align: center; }
 
   /* ===== フレーズ入力：ドラッグ＆ドロップのパレット＋32グリッド（8列×4段） ===== */
   .phrase-palette {
@@ -737,23 +743,30 @@
       <div class="playback-group">
         <div class="phrase-guide" id="phraseGuideChip">C <strong>MAJOR</strong> &nbsp;/&nbsp; <span id="phraseChip"></span></div>
         <div class="controls">
-          <button class="ctrl-btn" id="playPause">❚❚</button>
-          <button class="ctrl-btn loop-on" id="loopToggle" title="ループ再生 ON">🔁</button>
+          <div class="controls-buttons">
+            <button class="ctrl-btn" id="playPause">❚❚</button>
+            <button class="ctrl-btn loop-on" id="loopToggle" title="ループ再生 ON">🔁</button>
+            <button class="ctrl-btn" id="audioToggle">🔇</button>
+          </div>
           <div class="bpm-group" id="bpmGroup">
             <span class="bpm-unit-label">BPM</span>
             <input type="range" id="bpmRange" min="60" max="240" step="1" value="120" />
             <input type="number" id="bpmInput" min="60" max="240" step="1" value="120" inputmode="numeric" />
           </div>
-          <button class="ctrl-btn" id="audioToggle">🔇</button>
         </div>
       </div>
       <div>
         <div class="phrase-row-header">
-          <label>フレーズ入力（最大32ノーツ・ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを伸ばすタイとして機能）</label>
-          <button class="reset-btn" id="resetPlayback" title="リセットして再生">↺</button>
+          <label>フレーズ入力（ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを伸ばすタイとして機能）</label>
+          <div class="phrase-header-actions">
+            <button class="reset-btn small" id="rowMinus" title="行を削除（-8ノーツ）">－</button>
+            <span class="row-count-label" id="rowCountLabel">4行</span>
+            <button class="reset-btn small" id="rowPlus" title="行を追加（+8ノーツ）">＋</button>
+            <button class="reset-btn" id="resetPlayback" title="リセットして再生">↺</button>
+          </div>
         </div>
-        <div class="phrase-palette" id="phrasePalette"></div>
         <div class="phrase-grid" id="phraseGrid"></div>
+        <div class="phrase-palette" id="phrasePalette"></div>
         <div class="hint">上昇＝下へ／下降＝上へスライド</div>
       </div>
       <div>
@@ -795,6 +808,9 @@
   const phrasePalette = document.getElementById('phrasePalette');
   const phraseGrid = document.getElementById('phraseGrid');
   const resetPlaybackBtn = document.getElementById('resetPlayback');
+  const rowMinusBtn = document.getElementById('rowMinus');
+  const rowPlusBtn = document.getElementById('rowPlus');
+  const rowCountLabel = document.getElementById('rowCountLabel');
   const ivTextToggle = document.getElementById('ivTextToggle');
   const ratioRange = document.getElementById('ratioRange');
   const ratioLabel = document.getElementById('ratioLabel');
@@ -820,15 +836,18 @@
   let PARTICLE_SCALE = 1;
   const SLIDE_BASE_MS = 260;
 
-  // フレーズ入力：32グリッド（8列×4段・null=空）にドラッグ＆ドロップで度数を配置する
+  // フレーズ入力：8ノーツ×N段（null=空）にドラッグ＆ドロップで度数を配置する
   // 空白マスは「タイ（伸ばし）」として機能し、直前のノーツの表示時間を空白の数だけ延長する
   const DEFAULT_PHRASE = [
     '①', '②', '②', '③', '③', '④', '④', '⑤', '⑤', '⑥', '⑥', '⑦', '⑦',
     '⑧', '⑧', '⑧',
     '⑦', '⑦', '⑥', '⑥', '⑤', '⑤', '④', '④', '③', '③', '②', '②', '①', '①'
   ];
-  const GRID_SIZE = 32;
-  let gridSlots = DEFAULT_PHRASE.concat(new Array(GRID_SIZE - DEFAULT_PHRASE.length).fill(null));
+  const NOTES_PER_ROW = 8;
+  const MIN_ROWS = 1;
+  const MAX_ROWS = 8;
+  let numRows = 4;
+  let gridSlots = DEFAULT_PHRASE.concat(new Array(numRows * NOTES_PER_ROW - DEFAULT_PHRASE.length).fill(null));
   function computePhraseAndHolds() {
     const keys = [];
     const holds = [];
@@ -1193,6 +1212,28 @@
     beginStep();
   }
 
+  function updateRowControls() {
+    rowCountLabel.textContent = numRows + '行';
+    rowMinusBtn.disabled = numRows <= MIN_ROWS;
+    rowPlusBtn.disabled = numRows >= MAX_ROWS;
+  }
+
+  function setNumRows(n) {
+    const clamped = Math.max(MIN_ROWS, Math.min(MAX_ROWS, n));
+    if (clamped === numRows) return;
+    const newSize = clamped * NOTES_PER_ROW;
+    gridSlots = newSize > gridSlots.length
+      ? gridSlots.concat(new Array(newSize - gridSlots.length).fill(null))
+      : gridSlots.slice(0, newSize);
+    numRows = clamped;
+    updateRowControls();
+    renderPhraseUI();
+    applyGridPhrase();
+  }
+
+  rowMinusBtn.addEventListener('click', () => setNumRows(numRows - 1));
+  rowPlusBtn.addEventListener('click', () => setNumRows(numRows + 1));
+
   let phraseDragSource = null; // { from: 'palette'|'grid', index?, key }
 
   phrasePalette.addEventListener('dragstart', (e) => {
@@ -1255,6 +1296,7 @@
   });
 
   renderPhraseUI();
+  updateRowControls();
 
   ratioRange.addEventListener('input', () => {
     ratioIndex = Number(ratioRange.value);
