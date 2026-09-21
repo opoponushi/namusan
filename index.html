@@ -1032,7 +1032,8 @@
     const nextDur = steps[nextIndex].type === 'note' ? noteMs() : leadMs();
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
     // アイコンのフェードイン（遅延＋自身の時間）が完了するタイミングに音を合わせる
-    const iconTotalMs = (!isUnison && steps[nextIndex].type === 'note') ? slideMs * 2 : 0;
+    // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ遅延量を適用する
+    const iconTotalMs = steps[nextIndex].type === 'note' ? slideMs * 2 : 0;
 
     slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
