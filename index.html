@@ -897,8 +897,9 @@
     const nextIndex = (index + 1) % steps.length;
 
     if (nextIndex === 0) {
-      // フレーズの先頭に戻る（リピート）：黒画面をインターバルと同じ長さ・横スライドで一度だけ挟む
-      const blankDur = leadMs();
+      // フレーズの先頭に戻る（リピート）：最後の音の後に本来続くはずの「ノーツ＋インターバル」分の
+      // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
+      const blankDur = noteMs() + leadMs();
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
       bottomHideable.classList.remove('hidden');
