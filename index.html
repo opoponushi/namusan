@@ -853,10 +853,18 @@
   }
 
   function onStepEnd() {
+    const nextIndex = (index + 1) % steps.length;
+
+    if (nextIndex === 0) {
+      // フレーズの先頭に戻る（リピート）：アニメーションなしで即切り替え
+      resetStage(0);
+      beginStep();
+      return;
+    }
+
     const up = directionAt(steps, index);
     const ivStep = intervalAt(steps, index);
     const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
-    const nextIndex = (index + 1) % steps.length;
 
     // スライド時間はそのステップの持ち時間を超えないよう抑える
     const nextDur = (steps[nextIndex].type === 'note' ? BASE_NOTE_MS : BASE_LEAD_MS) / speedMultiplier;
