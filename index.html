@@ -260,34 +260,11 @@
     .iv-iris, .iv-spec, .iv-particle, .panel-interval .iv-num, .panel-interval .iv-text { animation: none !important; }
     .iv-iris { opacity: 0.35; }
     .iv-particles { display: none; }
-    .glyph-wrap.icon-move, .glyph-wrap.icon-exit { animation: none !important; opacity: 1 !important; transform: none !important; }
   }
   .iv-dir { position: absolute; top: 18px; right: 20px; font-size: 11px; opacity: 0.75; letter-spacing: 0.04em; }
 
+  .deg-label { font-size: 26px; font-weight: 800; color: #F3F6FF; letter-spacing: 0.04em; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
   .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
-
-  /* ===== 音符アイコンの登場／退出アニメーション =====
-     上昇：アイコンが下から上へフェードインしながら現れ、前のアイコンは上へフェードアウトしながら抜ける
-     下降：その逆（上から下へ） */
-  .glyph-wrap.icon-move {
-    animation-duration: var(--icon-anim-ms, 260ms);
-    animation-timing-function: cubic-bezier(.22,.9,.32,1);
-    animation-fill-mode: both;
-  }
-  .glyph-wrap.icon-move.up   { animation-name: iconEnterUp; }
-  .glyph-wrap.icon-move.down { animation-name: iconEnterDown; }
-  .glyph-wrap.icon-exit {
-    animation-duration: var(--icon-anim-ms, 260ms);
-    animation-timing-function: cubic-bezier(.4,0,.7,.4);
-    animation-fill-mode: both;
-  }
-  .glyph-wrap.icon-exit.up   { animation-name: iconExitUp; }
-  .glyph-wrap.icon-exit.down { animation-name: iconExitDown; }
-
-  @keyframes iconEnterUp   { from { transform: translateY(46px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  @keyframes iconEnterDown { from { transform: translateY(-46px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  @keyframes iconExitUp    { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-46px); opacity: 0; } }
-  @keyframes iconExitDown  { from { transform: translateY(0); opacity: 1; } to { transform: translateY(46px);  opacity: 0; } }
 
   .chip {
     background: rgba(0,0,0,0.32);
@@ -381,10 +358,9 @@
   .switch input:checked + .track { background: rgba(59,130,246,0.55); }
   .switch input:checked + .track .knob { transform: translateX(16px); background: var(--accent-blue); }
 
-  /* インターバルのテキスト情報を非表示にするトグル用（左上の半音数字も含む） */
+  /* インターバルのテキスト情報を非表示にするトグル用 */
   .frame.hide-iv-text .iv-text,
-  .frame.hide-iv-text .iv-dir,
-  .frame.hide-iv-text .iv-num { display: none; }
+  .frame.hide-iv-text .iv-dir { display: none; }
 </style>
 
 
@@ -442,12 +418,6 @@
   function glyphSVG(shape, filled, color) {
     const fill = filled ? color : 'none';
     const common = `fill="${fill}" stroke="${color}" stroke-width="7" stroke-linejoin="round"`;
-    // 図形ごとに見た目の大きさがばらつくため、中心(50,50)基準の拡大率で視覚的サイズを揃える
-    // （moon系は元の座標が中心からずれているため、拡大後の食み出しを避けるためviewBoxに余白を持たせている）
-    const SCALE = {
-      star: 0.89, triangle: 1.08, moonThick: 1.2, moonThin: 1.2,
-      diamond: 1.03, rect: 1.15, square: 1.7, circle: 1.3,
-    };
     const shapes = {
       star:      `<path d="M50 8 L61 38 L94 38 L67 57 L78 90 L50 70 L22 90 L33 57 L6 38 L39 38 Z" ${common}/>`,
       rect:      `<rect x="15" y="38" width="70" height="24" rx="3" ${common}/>`,
@@ -458,8 +428,7 @@
       moonThick: `<path d="M62 14 A36 36 0 1 0 62 86 A26 26 0 1 1 62 14 Z" ${common}/>`,
       moonThin:  `<path d="M58 18 A32 32 0 1 0 58 82 A38 38 0 1 1 58 18 Z" ${common}/>`,
     };
-    const k = SCALE[shape] || 1;
-    return `<svg width="168" height="168" viewBox="-20 -20 140 140"><g transform="translate(50,50) scale(${k}) translate(-50,-50)">${shapes[shape] || ''}</g></svg>`;
+    return `<svg width="92" height="92" viewBox="0 0 100 100">${shapes[shape] || ''}</svg>`;
   }
   function parsePhrase(input) {
     return input.split(/[\s,、]+/).filter(Boolean).filter(t => DEG[t]);
@@ -550,14 +519,12 @@
     return `<div class="iv-particles">${html}</div>`;
   }
 
-  function panelEl(step, durationMs, iconDir, animMs) {
+  function panelEl(step, durationMs) {
     const el = document.createElement('div');
     if (step.type === 'note') {
       const d = DEG[step.key];
       el.className = 'panel panel-note';
-      const moveClass = iconDir ? ` icon-move ${iconDir}` : '';
-      const moveStyle = iconDir ? ` style="--icon-anim-ms:${Math.round(animMs || 260)}ms"` : '';
-      el.innerHTML = `<div class="glyph-wrap${moveClass}"${moveStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div>`;
+      el.innerHTML = `<div class="glyph-wrap">${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}</div>`;
       return el;
     }
     const iv = step.iv;
@@ -770,17 +737,10 @@
 
   function slideTo(step, up, slideMs, stepMs) {
     finalizeSlide(); // 前の遷移が残っていれば先に確定させる
-    const incoming = panelEl(step, stepMs, up ? 'up' : 'down', slideMs);
+    const incoming = panelEl(step, stepMs);
     // 上昇：次のパネルは上（-100%）から下りてくる／下降：下（+100%）から上がってくる
     incoming.style.top = up ? '-100%' : '100%';
     trackEl.appendChild(incoming);
-
-    // アイコンのみ：前のノートのアイコンは同じ方向へフェードアウトしながら抜ける
-    const outgoingGlyph = currentPanel && currentPanel.querySelector('.glyph-wrap');
-    if (outgoingGlyph) {
-      outgoingGlyph.style.setProperty('--icon-anim-ms', `${Math.round(slideMs)}ms`);
-      outgoingGlyph.classList.add('icon-exit', up ? 'up' : 'down');
-    }
 
     trackEl.style.transition = 'none';
     trackEl.style.transform = 'translateY(0)';
