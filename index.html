@@ -1018,7 +1018,8 @@
       clearTimeout(toneTimer);
       stepTimerCallback = () => {
         resetStage(0);
-        beginStep(true, 0);
+        // 他の遷移と同じ「アイコンのフェードイン完了に音を合わせる」遅延を、リピート復帰時にも適用する
+        beginStep(true, blankSlideMs * 2);
       };
       stepTimer = setTimeout(stepTimerCallback, blankDur);
       return;
