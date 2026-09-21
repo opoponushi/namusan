@@ -476,6 +476,53 @@
   .frame.hide-iv-text .iv-dir,
   .frame.hide-iv-text .iv-num,
   .frame.hide-iv-text .deg-label { display: none; }
+
+  /* ===== 動画書き出し ===== */
+  .export-open-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--accent-blue);
+    background: rgba(59,130,246,0.12);
+    color: var(--accent-blue);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .export-open-btn:hover { background: rgba(59,130,246,0.22); }
+  .export-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .export-modal {
+    width: 100%;
+    max-width: 340px;
+    background: #0D1024;
+    border: 1px solid #2E3358;
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .export-modal h3 { margin: 0; font-size: 14px; color: #F0EDFF; }
+  .export-status { font-size: 11px; color: #8B87A8; line-height: 1.6; }
+  .export-progress-track { width: 100%; height: 6px; border-radius: 999px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; }
+  .export-progress-fill { height: 100%; width: 0%; background: var(--accent-blue); transition: width 120ms linear; }
+  .export-buttons { display: flex; gap: 10px; }
+  .export-btn { flex: 1; padding: 10px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .export-btn.secondary { background: #050710; border: 1px solid #2E3358; color: #8B87A8; }
+  .export-btn.secondary:hover { color: #F0EDFF; border-color: #3a4270; }
+  .export-btn.primary { background: var(--accent-blue); border: 1px solid var(--accent-blue); color: #fff; }
+  .export-btn.primary:hover { background: #2563EB; }
+  .export-btn:disabled { opacity: 0.5; cursor: default; }
 </style>
 
 
@@ -788,6 +835,33 @@
           <span class="track"><span class="knob"></span></span>
         </label>
       </div>
+      <button class="export-open-btn" id="exportOpenBtn">動画として書き出す（MP4）</button>
+    </div>
+
+    <div class="export-modal-backdrop hidden" id="exportModalBackdrop">
+      <div class="export-modal">
+        <h3>動画書き出し（1080×1920）</h3>
+        <div class="toggle-row">
+          <label>音声を含める</label>
+          <label class="switch">
+            <input type="checkbox" id="exportAudioToggle" checked />
+            <span class="track"><span class="knob"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <label>インターバルのテキスト情報を表示</label>
+          <label class="switch">
+            <input type="checkbox" id="exportIvTextToggle" checked />
+            <span class="track"><span class="knob"></span></span>
+          </label>
+        </div>
+        <div class="export-status" id="exportStatus">現在のフレーズを1回分、書き出します。</div>
+        <div class="export-progress-track"><div class="export-progress-fill" id="exportProgressFill"></div></div>
+        <div class="export-buttons">
+          <button class="export-btn secondary" id="exportCancelBtn">キャンセル</button>
+          <button class="export-btn primary" id="exportStartBtn">書き出し開始</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -818,6 +892,14 @@
   const irisLabel = document.getElementById('irisLabel');
   const particleRange = document.getElementById('particleRange');
   const particleLabel = document.getElementById('particleLabel');
+  const exportOpenBtn = document.getElementById('exportOpenBtn');
+  const exportModalBackdrop = document.getElementById('exportModalBackdrop');
+  const exportAudioToggle = document.getElementById('exportAudioToggle');
+  const exportIvTextToggle = document.getElementById('exportIvTextToggle');
+  const exportStatus = document.getElementById('exportStatus');
+  const exportProgressFill = document.getElementById('exportProgressFill');
+  const exportCancelBtn = document.getElementById('exportCancelBtn');
+  const exportStartBtn = document.getElementById('exportStartBtn');
 
   // 音・インターバルの表示時間はBPMの1拍（60000/bpm ms）から導出し、
   // 両者の比率だけをプリセット（16:1〜1:1）で選ぶ形にする
@@ -1323,6 +1405,590 @@
     // 表示中のパネルには濃度で即時反映（粒子数は次のインターバルから反映される）
     const layer = currentPanel && currentPanel.querySelector('.iv-particles');
     if (layer) layer.style.setProperty('--particle-opacity', Math.min(PARTICLE_SCALE, 1).toFixed(2));
+  });
+
+  // ============================================================
+  // 動画書き出し（DOM/CSSの見た目をCanvasに再描画してMediaRecorderで録画）
+  // ============================================================
+  const EXPORT_W = 1080, EXPORT_H = 1920;
+  const EXPORT_SCALE = EXPORT_W / 390;
+
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+  function cubicBezier(x1, y1, x2, y2) {
+    function bezVal(t, a, b) { const c = 3 * a, d = 3 * (b - a) - c, e = 1 - c - d; return ((e * t + d) * t + c) * t; }
+    return function (x) {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      let lo = 0, hi = 1, t = x;
+      for (let i = 0; i < 20; i++) {
+        const cx = bezVal(t, x1, x2);
+        if (Math.abs(cx - x) < 1e-4) break;
+        if (cx < x) lo = t; else hi = t;
+        t = (lo + hi) / 2;
+      }
+      return bezVal(t, y1, y2);
+    };
+  }
+  const easeSlide = cubicBezier(0.4, 0, 0.2, 1);
+  const easeIcon = cubicBezier(0.22, 0.9, 0.32, 1);
+  const easePart = cubicBezier(0.42, 0.03, 0.55, 0.98);
+  const easeIris = cubicBezier(0.3, 0, 0.25, 1);
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function wrapTextJa(ctx, text, x, y, maxWidth, lineHeight) {
+    let line = '';
+    let cy = y;
+    for (const ch of text) {
+      const test = line + ch;
+      if (line && ctx.measureText(test).width > maxWidth) {
+        ctx.fillText(line, x, cy);
+        line = ch;
+        cy += lineHeight;
+      } else {
+        line = test;
+      }
+    }
+    if (line) ctx.fillText(line, x, cy);
+    return cy;
+  }
+
+  function angleGradient(ctx, angleDeg, w, h, stops) {
+    const rad = angleDeg * Math.PI / 180;
+    const dx = Math.sin(rad), dy = -Math.cos(rad);
+    const cx = w / 2, cy = h / 2;
+    const len = Math.abs(dx) * w / 2 + Math.abs(dy) * h / 2;
+    const grad = ctx.createLinearGradient(cx - dx * len, cy - dy * len, cx + dx * len, cy + dy * len);
+    stops.forEach(([offset, color]) => grad.addColorStop(offset, color));
+    return grad;
+  }
+
+  const GLYPH_PATHS = {
+    star: 'M50 8 L61 38 L94 38 L67 57 L78 90 L50 70 L22 90 L33 57 L6 38 L39 38 Z',
+    triangle: 'M50 16 L86 82 L14 82 Z',
+    diamond: 'M50 12 L88 50 L50 88 L12 50 Z',
+    moonThick: 'M62 14 A36 36 0 1 0 62 86 A26 26 0 1 1 62 14 Z',
+    moonThin: 'M58 18 A32 32 0 1 0 58 82 A38 38 0 1 1 58 18 Z',
+  };
+
+  function drawGlyph(ctx, shape, filled, color, cx, cy, size, opacity, translateYpx) {
+    if (opacity <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(cx - size / 2, cy - size / 2 + translateYpx);
+    ctx.scale(size / 100, size / 100);
+    ctx.lineWidth = 7;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = filled ? color : 'transparent';
+    if (shape === 'rect') {
+      roundRectPath(ctx, 15, 38, 70, 24, 3);
+    } else if (shape === 'square') {
+      ctx.beginPath(); ctx.rect(27, 27, 46, 46);
+    } else if (shape === 'circle') {
+      ctx.beginPath(); ctx.arc(50, 50, 30, 0, Math.PI * 2);
+    } else {
+      const p = new Path2D(GLYPH_PATHS[shape] || '');
+      if (filled) ctx.fill(p);
+      ctx.stroke(p);
+      ctx.restore();
+      return;
+    }
+    if (filled) ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ----- 書き出し用タイムライン：現在のPHRASE/PHRASE_HOLDSから1回分の再生を事前計算する -----
+  function computeExportTimeline() {
+    const timelineSteps = buildSteps(PHRASE, PHRASE_HOLDS);
+    const segs = [];
+    let t = 0;
+    for (let i = 0; i < timelineSteps.length; i++) {
+      const step = timelineSteps[i];
+      const durMs = step.type === 'note' ? noteMs() * (1 + (step.hold || 0)) : leadMs();
+      let slideMs = 0, up = true, isUnison = false;
+      if (i > 0) {
+        up = directionAt(timelineSteps, i - 1);
+        const ivStep = intervalAt(timelineSteps, i - 1);
+        isUnison = !!ivStep && ivStep.iv.st === 0;
+        slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, durMs * 0.7);
+      }
+      const hasIconAnim = step.type === 'note' && i > 0 && !isUnison;
+      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, index: i });
+      t += durMs;
+    }
+    return { segs, totalMs: t };
+  }
+
+  function findSegment(segs, elapsedMs) {
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (elapsedMs >= segs[i].startMs) return segs[i];
+    }
+    return segs[0];
+  }
+
+  function computeBars(segs) {
+    const bars = [];
+    for (let i = 0; i < segs.length; i++) {
+      if (segs[i].step.type !== 'note') continue;
+      const next = segs[i + 1];
+      const total = segs[i].durMs + (next && next.step.type === 'interval' ? next.durMs : 0);
+      bars.push({ start: segs[i].startMs, total });
+    }
+    return bars;
+  }
+
+  // ----- 線状の光（パーティクル） -----
+  const exportParticleCache = new Map();
+  function getExportParticles(seg) {
+    if (exportParticleCache.has(seg.index)) return exportParticleCache.get(seg.index);
+    const step = seg.step;
+    const iv = step.type === 'interval' ? step.iv : { st: 12 };
+    const dir = step.type === 'blank' ? 'side' : (iv.st === 0 ? 'side' : (seg.up ? 'up' : 'down'));
+    const p = dir === 'side' ? 1 : Math.pow(iv.st / 12, 0.85);
+    const count = Math.round((34 + p * 86) * PARTICLE_SCALE);
+    const travelBase = (160 + p * 460) * EXPORT_SCALE;
+    const lenBase = (45 + p * 190) * EXPORT_SCALE;
+    const palette = [
+      ['rgba(255,255,255,0.95)', 'rgba(200,215,255,0.6)'],
+      ['rgba(226,232,255,0.92)', 'rgba(170,190,255,0.6)'],
+      ['rgba(190,200,255,0.90)', 'rgba(140,160,255,0.6)'],
+      ['rgba(160,170,255,0.88)', 'rgba(120,130,255,0.6)'],
+      ['rgba(140,150,250,0.85)', 'rgba(110,120,255,0.55)'],
+    ];
+    const horizontal = dir === 'side';
+    const durationMs = seg.durMs;
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      const r = (n) => Math.random() * n;
+      const len = lenBase * (0.3 + r(1.3));
+      const thin = (0.9 + r(1.1)) * EXPORT_SCALE;
+      const travel = travelBase * (0.7 + r(0.6));
+      const delay = Math.round(r(durationMs * 0.3));
+      const dur = Math.max(1, Math.round(durationMs * (0.6 + r(0.45))));
+      const op = 0.32 + r(0.62);
+      const [color] = palette[Math.floor(r(palette.length))];
+      const left = (horizontal ? -30 + r(160) : -4 + r(108)) / 100;
+      const top = (horizontal ? -4 + r(108) : -30 + r(160)) / 100;
+      list.push({ len, thin, travel, delay, dur, op, color, left, top });
+    }
+    const result = { horizontal, list };
+    exportParticleCache.set(seg.index, result);
+    return result;
+  }
+
+  function drawExportParticles(ctx, seg, localMs, w, h, alphaScale) {
+    const { list, horizontal } = getExportParticles(seg);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const pt of list) {
+      const t = (localMs - pt.delay) / pt.dur;
+      if (t < 0 || t > 1) continue;
+      const e = easePart(t);
+      let opacity;
+      if (t < 0.18) opacity = pt.op * (t / 0.18);
+      else if (t < 0.72) opacity = pt.op;
+      else opacity = pt.op * (1 - (t - 0.72) / 0.28);
+      opacity *= alphaScale;
+      if (opacity <= 0.01) continue;
+      const travelPos = pt.travel - e * (pt.travel * 2);
+      const scale = 0.85 + e * 0.4;
+      const lenScaled = pt.len * scale;
+      const cx = horizontal ? pt.left * w + travelPos : pt.left * w;
+      const cy = horizontal ? pt.top * h : pt.top * h + travelPos;
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.translate(cx, cy);
+      const grad = horizontal
+        ? ctx.createLinearGradient(-lenScaled / 2, 0, lenScaled / 2, 0)
+        : ctx.createLinearGradient(0, -lenScaled / 2, 0, lenScaled / 2);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.12, pt.color);
+      grad.addColorStop(0.88, pt.color);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      if (horizontal) ctx.fillRect(-lenScaled / 2, -pt.thin / 2, lenScaled, pt.thin);
+      else ctx.fillRect(-pt.thin / 2, -lenScaled / 2, pt.thin, lenScaled);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ----- スターフィールド背景（宇宙背景） -----
+  let exportStarfield = null;
+  function ensureExportStarfield() {
+    if (exportStarfield) return exportStarfield;
+    const stars = [];
+    for (let i = 0; i < 90; i++) {
+      stars.push({
+        left: Math.random(), top: Math.random(),
+        size: (0.6 + Math.random() * 1.8) * EXPORT_SCALE,
+        op: 0.25 + Math.random() * 0.65,
+        twinkle: Math.random() < 0.4,
+        dur: 2400 + Math.random() * 3000,
+        delay: Math.random() * 4000,
+      });
+    }
+    exportStarfield = { stars };
+    return exportStarfield;
+  }
+
+  function drawExportStarfieldBg(ctx, w, h, elapsedMs) {
+    const bg = ctx.createRadialGradient(w * 0.28, h * 0.18, 0, w * 0.28, h * 0.18, Math.max(w, h) * 0.9);
+    bg.addColorStop(0, '#10163a'); bg.addColorStop(0.45, '#070914'); bg.addColorStop(1, '#020207');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+    const nebulae = [
+      { x: 0.14, y: 0.12, size: 220, color: 'rgba(90,110,255,0.9)' },
+      { x: 0.78, y: 0.30, size: 180, color: 'rgba(160,90,255,0.8)' },
+      { x: 0.40, y: 0.78, size: 240, color: 'rgba(60,150,255,0.7)' },
+    ];
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.32;
+    try { ctx.filter = `blur(${Math.round(48 * EXPORT_SCALE)}px)`; } catch (e) {}
+    for (const n of nebulae) {
+      const r = n.size * EXPORT_SCALE / 2;
+      const g = ctx.createRadialGradient(n.x * w, n.y * h, 0, n.x * w, n.y * h, r);
+      g.addColorStop(0, n.color);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(n.x * w, n.y * h, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.filter = 'none';
+    ctx.restore();
+
+    const { stars } = ensureExportStarfield();
+    ctx.save();
+    for (const s of stars) {
+      let op = s.op;
+      if (s.twinkle) {
+        const phase = (((elapsedMs - s.delay) % s.dur) + s.dur) % s.dur / s.dur;
+        const wave = (1 + Math.cos(phase * Math.PI * 2)) / 2;
+        op = s.op * (0.2 + 0.8 * wave);
+      }
+      ctx.globalAlpha = op;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(s.left * w, s.top * h, s.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawGlassBg(ctx, w, h, elapsedMs) {
+    drawExportStarfieldBg(ctx, w, h, elapsedMs);
+    ctx.fillStyle = angleGradient(ctx, 165, w, h, [[0, 'rgba(214,228,255,0.22)'], [1, 'rgba(190,206,255,0.07)']]);
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  // ----- パネル描画（note / interval / blank） -----
+  function drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    drawGlassBg(ctx, w, h, elapsedMs);
+    const d = DEG[seg.step.key];
+    let iconOpacity = 1, iconTranslateY = 0;
+    if (seg.hasIconAnim) {
+      const raw = clamp01((localMs - seg.slideMs) / seg.slideMs);
+      const e = easeIcon(raw);
+      iconOpacity = e;
+      const dirSign = seg.up ? 1 : -1;
+      iconTranslateY = (1 - e) * 40 * dirSign * EXPORT_SCALE;
+    }
+    const iconSize = 92 * EXPORT_SCALE;
+    const iconCenterY = h * 0.44;
+    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, iconOpacity, iconTranslateY);
+    if (showText) {
+      ctx.save();
+      ctx.fillStyle = '#F3F6FF';
+      ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(seg.step.key, w / 2, iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE);
+      ctx.restore();
+    }
+  }
+
+  function drawIntervalPanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    const iv = seg.step.iv;
+    const grad = ctx.createRadialGradient(w * 0.3, h * 0.22, 0, w * 0.3, h * 0.22, Math.max(w, h) * 0.9);
+    iv.grad.forEach((c, i) => grad.addColorStop(i / (iv.grad.length - 1), c));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    const t = clamp01(localMs / seg.durMs);
+    const eIris = easeIris(t);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 * IRIS_SCALE;
+    const travel = h * 1.3;
+    const irisY = seg.up ? (1 - eIris * 2) * travel : (eIris * 2 - 1) * travel;
+    const irisGrad = ctx.createLinearGradient(0, irisY - h * 0.5, 0, irisY + h * 0.5);
+    irisGrad.addColorStop(0, 'transparent');
+    irisGrad.addColorStop(0.14, 'rgba(255,60,170,0.4)');
+    irisGrad.addColorStop(0.3, 'rgba(255,170,40,0.45)');
+    irisGrad.addColorStop(0.46, 'rgba(120,255,200,0.45)');
+    irisGrad.addColorStop(0.62, 'rgba(80,170,255,0.45)');
+    irisGrad.addColorStop(0.78, 'rgba(190,110,255,0.4)');
+    irisGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = irisGrad;
+    ctx.fillRect(-w * 0.25, 0, w * 1.5, h);
+    ctx.restore();
+
+    drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
+
+    if (showText) {
+      ctx.save();
+      ctx.fillStyle = iv.text;
+      ctx.globalAlpha = 0.75;
+      ctx.font = `${Math.round(11 * EXPORT_SCALE)}px sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(seg.step.up ? '▲ 上昇' : '▼ 下降', w - 20 * EXPORT_SCALE, 18 * EXPORT_SCALE);
+      ctx.restore();
+
+      ctx.save();
+      ctx.font = `800 ${Math.round(122 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillStyle = iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(iv.st), 6 * EXPORT_SCALE, -6 * EXPORT_SCALE);
+      ctx.restore();
+
+      const padX = 22 * EXPORT_SCALE;
+      let ty = h - 108 * EXPORT_SCALE;
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = iv.text;
+      ctx.globalAlpha = 0.65;
+      ctx.font = `${Math.round(12 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText('半音', padX, ty);
+      ty += 12 * EXPORT_SCALE + 21 * EXPORT_SCALE;
+      ctx.globalAlpha = 1;
+      ctx.font = `800 ${Math.round(21 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText(iv.name, padX, ty);
+      ty += 6 * EXPORT_SCALE + 13 * EXPORT_SCALE;
+      ctx.globalAlpha = 0.9;
+      ctx.font = `700 ${Math.round(13 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText(iv.colorName, padX, ty);
+      ty += 10 * EXPORT_SCALE + 10.5 * EXPORT_SCALE;
+      ctx.globalAlpha = 0.6;
+      ctx.font = `${Math.round(10.5 * EXPORT_SCALE)}px sans-serif`;
+      wrapTextJa(ctx, iv.nuance, padX, ty, w - padX * 2, 17 * EXPORT_SCALE);
+      ctx.restore();
+    }
+  }
+
+  function drawBlankPanel(ctx, seg, localMs, w, h, elapsedMs) {
+    drawGlassBg(ctx, w, h, elapsedMs);
+    drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
+  }
+
+  function drawPanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    if (seg.step.type === 'note') drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs);
+    else if (seg.step.type === 'interval') drawIntervalPanel(ctx, seg, localMs, w, h, showText, elapsedMs);
+    else drawBlankPanel(ctx, seg, localMs, w, h, elapsedMs);
+  }
+
+  function drawProgressBarExport(ctx, elapsedMs, bars) {
+    if (!bars.length) return;
+    let bar = bars[0];
+    for (const b of bars) { if (elapsedMs >= b.start) bar = b; }
+    const pct = clamp01((elapsedMs - bar.start) / bar.total);
+    const trackW = EXPORT_W * 0.62, trackH = 4 * EXPORT_SCALE;
+    const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 60 * EXPORT_SCALE;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    roundRectPath(ctx, tx, ty, trackW, trackH, trackH / 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    roundRectPath(ctx, tx, ty, trackW * pct, trackH, trackH / 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawExportFrame(ctx, elapsedMs, segs, bars, showText) {
+    ctx.clearRect(0, 0, EXPORT_W, EXPORT_H);
+    const lastSeg = segs[segs.length - 1];
+    const clampedElapsed = Math.min(elapsedMs, lastSeg.startMs + lastSeg.durMs - 1);
+    const seg = findSegment(segs, clampedElapsed);
+    const localMs = clampedElapsed - seg.startMs;
+    const prevSeg = seg.index > 0 ? segs[seg.index - 1] : null;
+
+    if (seg.slideMs > 0 && localMs < seg.slideMs && prevSeg) {
+      const raw = localMs / seg.slideMs;
+      const p = easeSlide(raw);
+      ctx.save();
+      if (seg.isUnison || seg.step.type === 'blank') {
+        ctx.save(); ctx.translate(-p * EXPORT_W, 0);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+        ctx.save(); ctx.translate((1 - p) * EXPORT_W, 0);
+        drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+      } else {
+        const dirSign = seg.up ? 1 : -1;
+        ctx.save(); ctx.translate(0, dirSign * p * EXPORT_H);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+        ctx.save(); ctx.translate(0, dirSign * (p - 1) * EXPORT_H);
+        drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+      }
+      ctx.restore();
+    } else {
+      drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+    }
+    drawProgressBarExport(ctx, clampedElapsed, bars);
+  }
+
+  // ----- 書き出しメイン処理 -----
+  let exporting = false;
+  let exportCancelRequested = false;
+
+  function scheduleExportTone(audioCtxExp, dest, semitone, atSec, durSec) {
+    const freq = 261.63 * Math.pow(2, semitone / 12);
+    const osc = audioCtxExp.createOscillator();
+    const gain = audioCtxExp.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, atSec);
+    gain.gain.exponentialRampToValueAtTime(0.22, atSec + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, atSec + durSec);
+    osc.connect(gain); gain.connect(dest);
+    osc.start(atSec); osc.stop(atSec + durSec + 0.05);
+  }
+
+  async function runExport() {
+    if (exporting) return;
+    exporting = true;
+    exportCancelRequested = false;
+    exportStartBtn.disabled = true;
+
+    const includeAudio = exportAudioToggle.checked;
+    const showText = exportIvTextToggle.checked;
+
+    const { segs, totalMs } = computeExportTimeline();
+    exportParticleCache.clear();
+    exportStarfield = null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = EXPORT_W; canvas.height = EXPORT_H;
+    const ctx = canvas.getContext('2d');
+
+    const fps = 30;
+    const videoStream = canvas.captureStream(fps);
+    let exportAudioCtx = null, audioDest = null;
+    let combinedStream = videoStream;
+    if (includeAudio) {
+      exportAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioDest = exportAudioCtx.createMediaStreamDestination();
+      combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]);
+    }
+
+    const candidates = [
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    const mimeType = candidates.find(c => window.MediaRecorder && MediaRecorder.isTypeSupported(c)) || '';
+    const usingMp4 = mimeType.startsWith('video/mp4');
+
+    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType, videoBitsPerSecond: 8000000 } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    const donePromise = new Promise((resolve) => { recorder.onstop = resolve; });
+
+    const bars = computeBars(segs);
+
+    recorder.start(200);
+    const startTs = performance.now();
+
+    if (includeAudio) {
+      const audioBase = exportAudioCtx.currentTime + 0.05;
+      for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        if (seg.step.type !== 'note') continue;
+        const rawDelay = i === 0 ? 0 : seg.slideMs * 2;
+        const delay = Math.max(0, Math.min(rawDelay, seg.durMs * 0.6));
+        const atSec = audioBase + (seg.startMs + delay) / 1000;
+        const durSec = (seg.durMs / 1000) * 0.92;
+        scheduleExportTone(exportAudioCtx, audioDest, DEG[seg.step.key].semitone, atSec, durSec);
+      }
+    }
+
+    await new Promise((resolveFrame) => {
+      function frame() {
+        if (exportCancelRequested) { resolveFrame(); return; }
+        const elapsed = performance.now() - startTs;
+        drawExportFrame(ctx, elapsed, segs, bars, showText);
+        const pct = Math.min(100, (elapsed / totalMs) * 100);
+        exportProgressFill.style.width = pct + '%';
+        exportStatus.textContent = `書き出し中… ${Math.min(100, Math.round(pct))}%`;
+        if (elapsed >= totalMs) { resolveFrame(); return; }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    });
+
+    recorder.stop();
+    await donePromise;
+    if (exportAudioCtx) exportAudioCtx.close();
+
+    if (!exportCancelRequested && chunks.length) {
+      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+      const ext = usingMp4 ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `interval-map-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      exportStatus.textContent = usingMp4
+        ? '書き出し完了！MP4ファイルをダウンロードしました。'
+        : 'このブラウザはMP4非対応のため、.webm形式で書き出しました。';
+    } else if (exportCancelRequested) {
+      exportStatus.textContent = 'キャンセルしました。';
+    } else {
+      exportStatus.textContent = '書き出しに失敗しました。ブラウザが動画の録画に対応していない可能性があります。';
+    }
+
+    exportProgressFill.style.width = '0%';
+    exportStartBtn.disabled = false;
+    exporting = false;
+  }
+
+  exportOpenBtn.addEventListener('click', () => {
+    exportAudioToggle.checked = audioEnabled;
+    exportIvTextToggle.checked = ivTextToggle.checked;
+    exportStatus.textContent = '現在のフレーズを1回分、書き出します。';
+    exportProgressFill.style.width = '0%';
+    exportModalBackdrop.classList.remove('hidden');
+  });
+  exportCancelBtn.addEventListener('click', () => {
+    if (exporting) {
+      exportCancelRequested = true;
+    } else {
+      exportModalBackdrop.classList.add('hidden');
+    }
+  });
+  exportStartBtn.addEventListener('click', () => {
+    runExport();
   });
 
   resetStage(0);
