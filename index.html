@@ -318,16 +318,6 @@
   }
   .bpm-group input[type="number"]::-webkit-outer-spin-button,
   .bpm-group input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .clean-btn {
-    font-size: 10px;
-    cursor: pointer;
-    background: rgba(0,0,0,0.32);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.16);
-    border-radius: 999px;
-    color: var(--ink);
-    padding: 6px 13px;
-  }
   .hidden { opacity: 0 !important; pointer-events: none !important; }
 
   .panel-box {
@@ -634,7 +624,6 @@
           </div>
           <button class="ctrl-btn" id="audioToggle">🔇</button>
         </div>
-        <button class="clean-btn" id="cleanToggle">クリーン再生</button>
       </div>
       <div>
         <label>フレーズ入力（度数を半角スペース区切り）</label>
@@ -684,7 +673,6 @@
   const playPauseBtn = document.getElementById('playPause');
   const bpmRange = document.getElementById('bpmRange');
   const bpmInput = document.getElementById('bpmInput');
-  const cleanToggle = document.getElementById('cleanToggle');
   const audioToggle = document.getElementById('audioToggle');
   const bottomHideable = document.getElementById('bottomHideable');
   const phraseChip = document.getElementById('phraseChip');
@@ -818,6 +806,7 @@
     if (withTone !== false && s.type === 'note') {
       playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92);
     }
+    bottomHideable.classList.toggle('hidden', s.type === 'interval');
     startProgressBar(stepDuration);
 
     if (playing) stepTimer = setTimeout(onStepEnd, stepDuration);
@@ -896,12 +885,6 @@
   });
   audioToggle.textContent = '🔇';
   audioToggle.title = '音をON';
-
-  cleanToggle.addEventListener('click', () => {
-    const hide = !bottomHideable.classList.contains('hidden');
-    bottomHideable.classList.toggle('hidden', hide);
-    cleanToggle.textContent = hide ? '編集表示' : 'クリーン再生';
-  });
 
   resetPlaybackBtn.addEventListener('click', () => {
     resetStage(0);
