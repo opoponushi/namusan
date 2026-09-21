@@ -21,6 +21,24 @@
   .brand .eyebrow-label { font-size: 10px; letter-spacing: 0.32em; color: #8B87A8; margin-bottom: 4px; }
   .brand .title { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
 
+  /* ===== 横幅が十分な画面ではビュー（frame）とコントローラー（panel-box）を
+     横並びにする。タイトル（brand）はコントローラー側の上に配置する ===== */
+  @media (min-width: 860px) {
+    #app-root {
+      display: grid;
+      grid-template-columns: auto minmax(300px, 380px);
+      grid-template-areas:
+        "frame brand"
+        "frame panel";
+      align-items: start;
+      justify-content: center;
+      gap: 16px 40px;
+    }
+    .brand { grid-area: brand; text-align: left; align-self: end; }
+    .frame { grid-area: frame; align-self: center; }
+    .panel-box { grid-area: panel; }
+  }
+
   .frame {
     width: var(--stage-w);
     max-width: 88vw;
