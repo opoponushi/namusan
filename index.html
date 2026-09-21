@@ -578,6 +578,8 @@
     const el = document.createElement('div');
     if (step.type === 'blank') {
       el.className = 'panel panel-blank';
+      // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
+      el.innerHTML = particlesHTML({ st: 12 }, 'side', Math.round(durationMs || 320));
       return el;
     }
     if (step.type === 'note') {
@@ -749,7 +751,6 @@
   let PHRASE = parsePhrase(phraseInput.value);
   let steps = [];
   let index = 0;
-  let lastUp = true; // 直近の遷移方向（リピート時の逆方向演出に使う）
   const BASE_BPM = 120;
   let bpm = 120;
   let speedMultiplier = 1; // bpm / BASE_BPM
@@ -894,21 +895,22 @@
     const nextIndex = (index + 1) % steps.length;
 
     if (nextIndex === 0) {
-      // フレーズの先頭に戻る（リピート）：黒画面を直近と逆方向に一度だけ挟んでから先頭へ
-      const reverseUp = !lastUp;
-      const blankMs = Math.min(SLIDE_BASE_MS / speedMultiplier, durationOf(0) * 0.7);
-      slideTo({ type: 'blank' }, reverseUp, blankMs, blankMs, false);
+      // フレーズの先頭に戻る（リピート）：黒画面を他のノーツと同じ長さ・横スライドで一度だけ挟む
+      const blankDur = BASE_NOTE_MS / speedMultiplier;
+      const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
+      slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
+      bottomHideable.classList.remove('hidden');
+      startProgressBar(blankDur);
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
       stepTimer = setTimeout(() => {
         resetStage(0);
         beginStep(true, 0);
-      }, blankMs + 160);
+      }, blankDur);
       return;
     }
 
     const up = directionAt(steps, index);
-    lastUp = up;
     const ivStep = intervalAt(steps, index);
     const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
 
