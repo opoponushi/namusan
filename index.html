@@ -546,7 +546,7 @@
     { key: '⑥', semitone: 9,  shape: 'moonThin',  filled: false },
     { key: '♭7', semitone: 10,shape: 'diamond',   filled: true  },
     { key: '⑦', semitone: 11, shape: 'diamond',   filled: false },
-    { key: '⑧', semitone: 12, shape: 'star',      filled: true  },
+    { key: '⑧', semitone: 12, shape: 'star',      filled: false },
   ];
   const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
 
@@ -578,20 +578,42 @@
     const parts = stops.map((c, i) => `${c} ${Math.round((i/(n-1))*100)}%`);
     return `radial-gradient(circle at 30% 22%, ${parts.join(', ')})`;
   }
+  // 図形の定義（画面のSVGと動画書き出しのCanvasで共通）。viewBox 100x100 の中で
+  // どの図形も見た目の大きさ（約76〜84）が揃うように設計している
+  function starPath(R, ratio) {
+    const cy = 50 - (1.809 * R) / 2 + R; // 外接の高さの中心がviewBoxの中央に来るよう配置
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const rad = (i % 2 === 0 ? R : R * ratio);
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      pts.push(`${(50 + rad * Math.cos(ang)).toFixed(2)} ${(cy + rad * Math.sin(ang)).toFixed(2)}`);
+    }
+    return `M${pts.join(' L')} Z`;
+  }
+  // 三日月：外円(R)から内円(r、中心をoffだけ右にずらす)を抜いた形。左右の中心が揃うよう配置する
+  function crescentPath(R, r, off) {
+    const x = (R * R - r * r + off * off) / (2 * off);
+    const y = Math.sqrt(R * R - x * x);
+    const cx = 50 + (R - x) / 2;
+    const tipX = (cx + x).toFixed(2);
+    const innerLarge = x > off ? 1 : 0;
+    return `M${tipX} ${(50 - y).toFixed(2)} A${R} ${R} 0 1 0 ${tipX} ${(50 + y).toFixed(2)} A${r} ${r} 0 ${innerLarge} 1 ${tipX} ${(50 - y).toFixed(2)} Z`;
+  }
+  const GLYPH_SIZE = 120;
+  const GLYPH_PATHS = {
+    star:      starPath(44, 0.46),
+    rect:      'M14 35 H86 A5 5 0 0 1 91 40 V60 A5 5 0 0 1 86 65 H14 A5 5 0 0 1 9 60 V40 A5 5 0 0 1 14 35 Z',
+    triangle:  'M50 15 L90 85 L10 85 Z',
+    square:    'M18 18 H82 V82 H18 Z',
+    circle:    'M12 50 A38 38 0 1 0 88 50 A38 38 0 1 0 12 50 Z',
+    diamond:   'M50 10 L90 50 L50 90 L10 50 Z',
+    moonThick: crescentPath(40, 30, 20),
+    moonThin:  crescentPath(40, 36, 16),
+  };
   function glyphSVG(shape, filled, color) {
     const fill = filled ? color : 'none';
-    const common = `fill="${fill}" stroke="${color}" stroke-width="7" stroke-linejoin="round"`;
-    const shapes = {
-      star:      `<path d="M50 8 L61 38 L94 38 L67 57 L78 90 L50 70 L22 90 L33 57 L6 38 L39 38 Z" ${common}/>`,
-      rect:      `<rect x="15" y="38" width="70" height="24" rx="3" ${common}/>`,
-      triangle:  `<path d="M50 16 L86 82 L14 82 Z" ${common}/>`,
-      square:    `<rect x="27" y="27" width="46" height="46" ${common}/>`,
-      circle:    `<circle cx="50" cy="50" r="30" ${common}/>`,
-      diamond:   `<path d="M50 12 L88 50 L50 88 L12 50 Z" ${common}/>`,
-      moonThick: `<path d="M62 14 A36 36 0 1 0 62 86 A26 26 0 1 1 62 14 Z" ${common}/>`,
-      moonThin:  `<path d="M58 18 A32 32 0 1 0 58 82 A38 38 0 1 1 58 18 Z" ${common}/>`,
-    };
-    return `<svg width="92" height="92" viewBox="0 0 100 100">${shapes[shape] || ''}</svg>`;
+    return `<svg width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" viewBox="0 0 100 100">`
+      + `<path d="${GLYPH_PATHS[shape] || ''}" fill="${fill}" stroke="${color}" stroke-width="7" stroke-linejoin="round"/></svg>`;
   }
 
   // 宇宙背景（スターフィールド）を一度だけ生成。ノートパネルのすりガラス越しに透けて見える
@@ -1474,14 +1496,6 @@
     return grad;
   }
 
-  const GLYPH_PATHS = {
-    star: 'M50 8 L61 38 L94 38 L67 57 L78 90 L50 70 L22 90 L33 57 L6 38 L39 38 Z',
-    triangle: 'M50 16 L86 82 L14 82 Z',
-    diamond: 'M50 12 L88 50 L50 88 L12 50 Z',
-    moonThick: 'M62 14 A36 36 0 1 0 62 86 A26 26 0 1 1 62 14 Z',
-    moonThin: 'M58 18 A32 32 0 1 0 58 82 A38 38 0 1 1 58 18 Z',
-  };
-
   function drawGlyph(ctx, shape, filled, color, cx, cy, size, opacity, translateYpx) {
     if (opacity <= 0) return;
     ctx.save();
@@ -1491,22 +1505,10 @@
     ctx.lineWidth = 7;
     ctx.lineJoin = 'round';
     ctx.strokeStyle = color;
-    ctx.fillStyle = filled ? color : 'transparent';
-    if (shape === 'rect') {
-      roundRectPath(ctx, 15, 38, 70, 24, 3);
-    } else if (shape === 'square') {
-      ctx.beginPath(); ctx.rect(27, 27, 46, 46);
-    } else if (shape === 'circle') {
-      ctx.beginPath(); ctx.arc(50, 50, 30, 0, Math.PI * 2);
-    } else {
-      const p = new Path2D(GLYPH_PATHS[shape] || '');
-      if (filled) ctx.fill(p);
-      ctx.stroke(p);
-      ctx.restore();
-      return;
-    }
-    if (filled) ctx.fill();
-    ctx.stroke();
+    ctx.fillStyle = color;
+    const p = new Path2D(GLYPH_PATHS[shape] || '');
+    if (filled) ctx.fill(p);
+    ctx.stroke(p);
     ctx.restore();
   }
 
@@ -1645,10 +1647,11 @@
     return exportStarfield;
   }
 
-  function drawExportStarfieldBg(ctx, w, h, elapsedMs) {
+  function drawExportStarfieldBg(ctx, w, h, elapsedMs, bleed) {
+    const m = bleed || 0;
     const bg = ctx.createRadialGradient(w * 0.28, h * 0.18, 0, w * 0.28, h * 0.18, Math.max(w, h) * 0.9);
     bg.addColorStop(0, '#10163a'); bg.addColorStop(0.45, '#070914'); bg.addColorStop(1, '#020207');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = bg; ctx.fillRect(-m, -m, w + m * 2, h + m * 2);
 
     const nebulae = [
       { x: 0.14, y: 0.12, size: 220, color: 'rgba(90,110,255,0.9)' },
@@ -1688,8 +1691,30 @@
     ctx.restore();
   }
 
-  function drawGlassBg(ctx, w, h, elapsedMs) {
-    drawExportStarfieldBg(ctx, w, h, elapsedMs);
+  // 画面上の「すりガラス」（backdrop-filter: blur(22px) saturate(1.35)）と同じ見た目になるよう、
+  // 星空を一度だけぼかして保持する。星は輪郭が溶けて粒状ノイズに見えないようにする
+  let exportGlassCanvas = null;
+  function getExportGlassCanvas(w, h) {
+    if (exportGlassCanvas) return exportGlassCanvas;
+    const blurPx = Math.round(22 * EXPORT_SCALE);
+    const m = blurPx * 3;
+    const src = document.createElement('canvas');
+    src.width = w + m * 2; src.height = h + m * 2;
+    const sctx = src.getContext('2d');
+    sctx.translate(m, m);
+    drawExportStarfieldBg(sctx, w, h, 0, m);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const octx = out.getContext('2d');
+    octx.filter = `blur(${blurPx}px) saturate(1.35)`;
+    octx.drawImage(src, -m, -m);
+    octx.filter = 'none';
+    exportGlassCanvas = out;
+    return out;
+  }
+
+  function drawGlassBg(ctx, w, h) {
+    ctx.drawImage(getExportGlassCanvas(w, h), 0, 0);
     ctx.fillStyle = angleGradient(ctx, 165, w, h, [[0, 'rgba(214,228,255,0.22)'], [1, 'rgba(190,206,255,0.07)']]);
     ctx.fillRect(0, 0, w, h);
   }
@@ -1706,7 +1731,7 @@
       const dirSign = seg.up ? 1 : -1;
       iconTranslateY = (1 - e) * 40 * dirSign * EXPORT_SCALE;
     }
-    const iconSize = 92 * EXPORT_SCALE;
+    const iconSize = GLYPH_SIZE * EXPORT_SCALE;
     const iconCenterY = h * 0.44;
     drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, iconOpacity, iconTranslateY);
     if (showText) {
@@ -1881,6 +1906,7 @@
     const { segs, totalMs } = computeExportTimeline();
     exportParticleCache.clear();
     exportStarfield = null;
+    exportGlassCanvas = null;
 
     const canvas = document.createElement('canvas');
     canvas.width = EXPORT_W; canvas.height = EXPORT_H;
