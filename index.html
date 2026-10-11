@@ -557,7 +557,7 @@
   const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
 
   const INTERVALS = [
-    { st: 0,  name: '完全1度（ユニゾン）',        colorName: '木目（基準色）',        grad: ['#8B5E3C','#653043','#3E2723'], text:'#fff',    nuance:'基準となる音そのもの（変化なし）' },
+    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ホワイト（ホワイトアウト）', grad: ['#FFFFFF','#FBFCFF','#F2F5FF','#E6EBFA'], text:'#1a1a1a', nuance:'音が移動していない（同じ音のまま）' },
     { st: 1,  name: '短2度',                       colorName: '青 メタリック',          grad: ['#3B82F6','#2359CB','#1744B5','#0B2F9F'], text:'#fff', nuance:'最も近い、ぶつかりの音（半音）' },
     { st: 2,  name: '長2度',                       colorName: '赤 メタリック',          grad: ['#EF4444','#BF2929','#A61C1C','#8E0E0E'], text:'#fff', nuance:'明るくはっきりとした上昇' },
     { st: 3,  name: '短3度',                       colorName: '紫 メタリック',          grad: ['#A78BFA','#9070E1','#7A54C8','#6339AE','#4C1D95'], text:'#fff', nuance:'哀しく神秘的な暗さ' },
@@ -800,7 +800,7 @@
       <div class="iv-iris ${dir}"></div>
       <div class="iv-spec ${dir}"></div>
       ${particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
-      <div class="iv-dir">${step.up ? '▲ 上昇' : '▼ 下降'}</div>
+      <div class="iv-dir">${iv.st === 0 ? '＝ 同音' : (step.up ? '▲ 上昇' : '▼ 下降')}</div>
       <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
       <div class="iv-text ${dir}">
         <div class="iv-semitone-label">半音</div>
@@ -1061,6 +1061,8 @@
     if (outgoing && outgoing.parentNode) outgoing.remove();
     incoming.style.top = '0';
     incoming.style.left = '0';
+    incoming.style.transition = '';
+    incoming.style.opacity = '';
     incoming.classList.remove('panel-h');
     trackEl.style.transition = 'none';
     trackEl.style.transform = 'translateY(0)';
@@ -1075,8 +1077,26 @@
     const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
 
-    if (isUnison) {
-      // 音高が変わらない（ユニゾン）遷移は上下ではなく左右にスライドする
+    if (isUnison && step.type !== 'blank') {
+      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、白へ溶けるようにクロスフェードする（ホワイトアウト）
+      incoming.style.top = '0';
+      incoming.style.left = '0';
+      incoming.style.opacity = '0';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateY(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      const fadeCss = `opacity ${slideMs}ms ease-out`;
+      incoming.style.transition = fadeCss;
+      incoming.style.opacity = '1';
+      // 白（不透明）へ入る時は下のパネルをそのまま残し、白から戻る時だけ白を溶かして背景を透かす
+      if (currentPanel && step.type !== 'interval') {
+        currentPanel.style.transition = fadeCss;
+        currentPanel.style.opacity = '0';
+      }
+    } else if (isUnison) {
+      // リピート復帰の黒画面（ブランク）は従来どおり左右にスライドする
       incoming.classList.add('panel-h');
       incoming.style.top = '0';
       incoming.style.left = '100%';
@@ -1534,6 +1554,15 @@
   const easeIcon = cubicBezier(0.22, 0.9, 0.32, 1);
   const easePart = cubicBezier(0.42, 0.03, 0.55, 0.98);
   const easeIris = cubicBezier(0.3, 0, 0.25, 1);
+  const easeFade = cubicBezier(0, 0, 0.58, 1); // CSSの ease-out
+  let exportFadeLayer = null;
+  function getExportFadeLayer() {
+    if (!exportFadeLayer) {
+      exportFadeLayer = document.createElement('canvas');
+      exportFadeLayer.width = EXPORT_W; exportFadeLayer.height = EXPORT_H;
+    }
+    return exportFadeLayer;
+  }
 
   function roundRectPath(ctx, x, y, w, h, r) {
     ctx.beginPath();
@@ -1883,7 +1912,7 @@
       ctx.font = `${Math.round(11 * EXPORT_SCALE)}px sans-serif`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
-      ctx.fillText(seg.step.up ? '▲ 上昇' : '▼ 下降', w - 20 * EXPORT_SCALE, 18 * EXPORT_SCALE);
+      ctx.fillText(iv.st === 0 ? '＝ 同音' : (seg.step.up ? '▲ 上昇' : '▼ 下降'), w - 20 * EXPORT_SCALE, 18 * EXPORT_SCALE);
       ctx.restore();
 
       ctx.save();
@@ -1957,7 +1986,18 @@
       const raw = localMs / seg.slideMs;
       const p = easeSlide(raw);
       ctx.save();
-      if (seg.isUnison || seg.step.type === 'blank') {
+      if (seg.isUnison && seg.step.type !== 'blank') {
+        // ユニゾン（ホワイトアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
+        const pf = easeFade(raw);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        const layer = getExportFadeLayer();
+        const lctx = layer.getContext('2d');
+        lctx.clearRect(0, 0, EXPORT_W, EXPORT_H);
+        drawPanel(lctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.globalAlpha = pf;
+        ctx.drawImage(layer, 0, 0);
+        ctx.globalAlpha = 1;
+      } else if (seg.step.type === 'blank') {
         ctx.save(); ctx.translate(-p * EXPORT_W, 0);
         drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
         ctx.restore();
