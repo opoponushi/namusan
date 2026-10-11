@@ -458,6 +458,13 @@
   .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
   .phrase-chip.dragging { opacity: 0.35; }
   .phrase-chip-tied { opacity: 0.32; cursor: default; }
+  /* 同音のリピート復帰：白く飛んでから静かに戻る（横には動かさない） */
+  .whiteout-layer {
+    position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 50% 42%, #FFFFFF 0%, #F6F8FF 60%, #E9EEFB 100%);
+    animation: whiteoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
+  }
+  @keyframes whiteoutFade { from { opacity: 1; } to { opacity: 0; } }
   .phrase-slot.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
   .phrase-chip { position: relative; }
   .oct-mark { position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: var(--accent-blue); line-height: 1; }
@@ -741,6 +748,11 @@
     const el = document.createElement('div');
     if (step.type === 'blank') {
       el.className = 'panel panel-blank';
+      if (step.whiteout) {
+        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、白く飛んでから静かに戻る
+        el.innerHTML = `<div class="whiteout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
+        return el;
+      }
       // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
       el.innerHTML = particlesHTML({ st: 12 }, 'side', Math.round(durationMs || 320));
       return el;
@@ -799,7 +811,7 @@
     el.innerHTML = `
       <div class="iv-iris ${dir}"></div>
       <div class="iv-spec ${dir}"></div>
-      ${particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
+      ${iv.st === 0 ? '' : particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
       <div class="iv-dir">${iv.st === 0 ? '＝ 同音' : (step.up ? '▲ 上昇' : '▼ 下降')}</div>
       <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
       <div class="iv-text ${dir}">
@@ -1077,7 +1089,7 @@
     const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
 
-    if (isUnison && step.type !== 'blank') {
+    if (isUnison && (step.type !== 'blank' || step.whiteout)) {
       // 音高が変わらない（ユニゾン）遷移は向きを持たせず、白へ溶けるようにクロスフェードする（ホワイトアウト）
       incoming.style.top = '0';
       incoming.style.left = '0';
@@ -1202,7 +1214,11 @@
       // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
       const blankDur = leadMs() + durationOf(0);
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
-      slideTo({ type: 'blank' }, true, blankSlideMs, blankDur, true); // isUnison=trueで横スライドにする
+      // 最後のノーツと最初のノーツが同音（①→①など）なら音が移動していないので、
+      // 横スライドではなくホワイトアウトにする。同音でないリピートは従来どおり
+      const lastStep = steps[index];
+      const sameAsFirst = lastStep.type === 'note' && noteSemitone(lastStep) === noteSemitone(steps[0]);
+      slideTo({ type: 'blank', whiteout: sameAsFirst }, true, blankSlideMs, blankDur, true);
       bottomHideable.classList.remove('hidden');
       // 進行バーはリセットせず、直前のノーツ開始時に張ったバーをそのまま継続させる
       stepDuration = blankDur;
@@ -1903,7 +1919,7 @@
     ctx.fillRect(-w * 0.25, 0, w * 1.5, h);
     ctx.restore();
 
-    drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
+    if (iv.st !== 0) drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
 
     if (showText) {
       ctx.save();
