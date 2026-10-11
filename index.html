@@ -458,6 +458,12 @@
   .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
   .phrase-chip.dragging { opacity: 0.35; }
   .phrase-chip-tied { opacity: 0.32; cursor: default; }
+  .phrase-slot.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
+  .phrase-chip { position: relative; }
+  .oct-mark { position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: var(--accent-blue); line-height: 1; }
+  .octave-row { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .octave-label { font-size: 10px; color: #8B87A8; margin-right: auto; }
+  .deg-label .oct-badge { margin-left: 8px; font-size: 14px; font-weight: 700; opacity: 0.8; vertical-align: middle; }
   .panel-box .hint { font-size: 9.5px; color: #5B5878; margin-top: 4px; }
   .panel-box .row { display: flex; gap: 14px; }
   .panel-box .row > div { flex: 1; }
@@ -567,11 +573,16 @@
   ];
   const IV = Object.fromEntries(INTERVALS.map(i => [i.st, i]));
 
-  function resolveInterval(aKey, bKey) {
-    const a = DEG[aKey], b = DEG[bKey];
-    if (!a || !b) return null;
-    const raw = Math.abs(a.semitone - b.semitone);
-    return IV[raw] || IV[12 - raw] || IV[0];
+  // ノーツ = { key: '③', oct: -1|0|1 }。記号は変えず、オクターブは別の値として持つ
+  const MIN_OCT = -1, MAX_OCT = 1;
+  function noteSemitone(n) { return DEG[n.key].semitone + 12 * (n.oct || 0); }
+  function octLabel(oct) { return oct > 0 ? '+' + oct : oct < 0 ? '−' + Math.abs(oct) : ''; }
+
+  // インターバルは半音距離で決まる。想定上限（5.5音=11半音）を超えた場合は1オクターブ分を折り返して色を決める
+  function resolveInterval(a, b) {
+    let raw = Math.abs(noteSemitone(a) - noteSemitone(b));
+    if (raw > 12) raw = raw % 12 || 12;
+    return IV[raw] || IV[0];
   }
   function radialGrad(stops) {
     const n = stops.length;
@@ -647,12 +658,12 @@
 
   function buildSteps(phrase, holds) {
     const steps = [];
-    phrase.forEach((key, i) => {
-      steps.push({ type: 'note', key, hold: (holds && holds[i]) || 0 });
+    phrase.forEach((note, i) => {
+      steps.push({ type: 'note', key: note.key, oct: note.oct || 0, hold: (holds && holds[i]) || 0 });
       if (i < phrase.length - 1) {
         const to = phrase[i + 1];
-        const up = DEG[to].semitone >= DEG[key].semitone;
-        steps.push({ type: 'interval', from: key, to, iv: resolveInterval(key, to), up });
+        const up = noteSemitone(to) >= noteSemitone(note);
+        steps.push({ type: 'interval', from: note.key, to: to.key, iv: resolveInterval(note, to), up });
       }
     });
     return steps;
@@ -716,7 +727,17 @@
     return `<div class="iv-particles">${html}</div>`;
   }
 
-  function panelEl(step, durationMs, iconDir, animMs) {
+  // ノーツ1つ分の「発音」と「アイコン表示」のタイミング（ms、ステップ開始からの相対）。
+  // アイコンのフェードインは発音の瞬間に完了するよう逆算して開始を決める。
+  // 画面と動画書き出しで同じ値を使う
+  function noteTiming(slideMs, durMs) {
+    const toneDelay = Math.max(0, Math.min(slideMs * 2, durMs * 0.6));
+    const iconDur = Math.max(80, Math.min(slideMs, toneDelay * 0.6));
+    const iconDelay = Math.max(0, toneDelay - iconDur);
+    return { toneDelay, iconDelay, iconDur };
+  }
+
+  function panelEl(step, durationMs, iconDir, timing) {
     const el = document.createElement('div');
     if (step.type === 'blank') {
       el.className = 'panel panel-blank';
@@ -727,11 +748,13 @@
     if (step.type === 'note') {
       const d = DEG[step.key];
       el.className = 'panel panel-note';
-      // パネルのスライド（animMs）が終わってからアイコンが独立してフェードインするよう遅延させる
+      // アイコンのフェードインは発音の瞬間に完了するよう、noteTimingで求めた遅延・長さを使う
       const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
-      const enterMs = Math.round(animMs || 260);
-      const enterStyle = iconDir ? ` style="--icon-anim-delay:${enterMs}ms;--icon-anim-dur:${enterMs}ms"` : '';
-      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}</div>`;
+      const t = timing || { iconDelay: 0, iconDur: 260 };
+      const enterStyle = iconDir ? ` style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms"` : '';
+      const oct = octLabel(step.oct);
+      const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
+      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}${badge}</div>`;
       return el;
     }
     const iv = step.iv;
@@ -835,6 +858,12 @@
           </div>
         </div>
         <div class="phrase-grid" id="phraseGrid"></div>
+        <div class="octave-row">
+          <span class="octave-label" id="octaveLabel"></span>
+          <button class="reset-btn small" id="octMinus" title="1オクターブ下げる">－</button>
+          <span class="row-count-label" id="octValueLabel"></span>
+          <button class="reset-btn small" id="octPlus" title="1オクターブ上げる">＋</button>
+        </div>
         <div class="phrase-palette" id="phrasePalette"></div>
         <div class="hint">上昇＝下へ／下降＝上へスライド</div>
       </div>
@@ -907,6 +936,10 @@
   const rowMinusBtn = document.getElementById('rowMinus');
   const rowPlusBtn = document.getElementById('rowPlus');
   const rowCountLabel = document.getElementById('rowCountLabel');
+  const octaveLabel = document.getElementById('octaveLabel');
+  const octMinusBtn = document.getElementById('octMinus');
+  const octPlusBtn = document.getElementById('octPlus');
+  const octValueLabel = document.getElementById('octValueLabel');
   const ivTextToggle = document.getElementById('ivTextToggle');
   const ratioRange = document.getElementById('ratioRange');
   const ratioLabel = document.getElementById('ratioLabel');
@@ -951,13 +984,16 @@
   const MIN_ROWS = 1;
   const MAX_ROWS = 8;
   let numRows = 4;
-  let gridSlots = DEFAULT_PHRASE.concat(new Array(numRows * NOTES_PER_ROW - DEFAULT_PHRASE.length).fill(null));
+  // 各マスは null（空）または { key, oct }。oct は -1/0/+1（記号は変えずオクターブだけを別に持つ）
+  let gridSlots = DEFAULT_PHRASE.map(key => ({ key, oct: 0 }))
+    .concat(new Array(numRows * NOTES_PER_ROW - DEFAULT_PHRASE.length).fill(null));
+  let selectedIndex = null; // オクターブ変更の対象として選択中のマス
   function computePhraseAndHolds() {
     const keys = [];
     const holds = [];
-    gridSlots.forEach((key) => {
-      if (key) {
-        keys.push(key);
+    gridSlots.forEach((note) => {
+      if (note) {
+        keys.push(note);
         holds.push(0);
       } else if (holds.length > 0) {
         holds[holds.length - 1]++;
@@ -1032,11 +1068,11 @@
     currentPanel = incoming;
   }
 
-  function slideTo(step, up, slideMs, stepMs, isUnison) {
+  function slideTo(step, up, slideMs, stepMs, isUnison, timing) {
     finalizeSlide(); // 前の遷移が残っていれば先に確定させる
     // 図形アイコンの登場アニメーションはパネルのスライドとは分離して付与する（ユニゾンは対象外）
     const iconDir = isUnison ? null : (up ? 'up' : 'down');
-    const incoming = panelEl(step, stepMs, iconDir, slideMs);
+    const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
 
     if (isUnison) {
@@ -1105,9 +1141,9 @@
     if (withTone !== false && s.type === 'note') {
       const delay = Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6));
       if (delay > 0) {
-        toneTimer = setTimeout(() => playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92), delay);
+        toneTimer = setTimeout(() => playTone(noteSemitone(s), (stepDuration / 1000) * 0.92), delay);
       } else {
-        playTone(DEG[s.key].semitone, (stepDuration / 1000) * 0.92);
+        playTone(noteSemitone(s), (stepDuration / 1000) * 0.92);
       }
     }
     if (s.type === 'note') {
@@ -1170,13 +1206,13 @@
     // スライド時間はそのステップの持ち時間を超えないよう抑える
     const nextDur = steps[nextIndex].type === 'note' ? noteMs() : leadMs();
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
-    // アイコンのフェードイン（遅延＋自身の時間）が完了するタイミングに音を合わせる
-    // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ遅延量を適用する
-    const iconTotalMs = steps[nextIndex].type === 'note' ? slideMs * 2 : 0;
+    // 発音の瞬間にアイコン表示が完了するよう、発音タイミングとアイコンの開始を揃えて決める
+    // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ発音遅延を適用する
+    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, durationOf(nextIndex)) : null;
 
-    slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison);
+    slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison, timing);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
-    beginStep(true, iconTotalMs);
+    beginStep(true, timing ? timing.toneDelay : 0);
   }
 
   function resetStage(startIndex) {
@@ -1191,7 +1227,7 @@
     currentPanel = panelEl(steps[index], durationOf(index));
     currentPanel.style.top = '0';
     trackEl.appendChild(currentPanel);
-    phraseChip.textContent = 'PHRASE — ' + PHRASE.join(' ');
+    phraseChip.textContent = 'PHRASE — ' + PHRASE.map(n => n.key + octLabel(n.oct)).join(' ');
   }
 
   // ============================================================
@@ -1282,26 +1318,54 @@
     phrasePalette.innerHTML = DEGREES.map(d =>
       `<div class="phrase-chip" draggable="true" data-source="palette" data-key="${d.key}">${d.key}</div>`
     ).join('');
-    let lastKey = null;
-    phraseGrid.innerHTML = gridSlots.map((key, i) => {
-      if (key) {
-        lastKey = key;
+    const chipHTML = (note) => note.key + (note.oct ? `<span class="oct-mark">${octLabel(note.oct)}</span>` : '');
+    let lastNote = null;
+    phraseGrid.innerHTML = gridSlots.map((note, i) => {
+      if (note) {
+        lastNote = note;
+        const sel = i === selectedIndex ? ' selected' : '';
         return `
-          <div class="phrase-slot filled" data-index="${i}">
-            <div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${key}">${key}</div>
+          <div class="phrase-slot filled${sel}" data-index="${i}">
+            <div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${note.key}">${chipHTML(note)}</div>
           </div>
         `;
       }
-      if (lastKey) {
+      if (lastNote) {
         // 空白マス：直前のノーツの記号をタイ（伸ばし）の見た目として残す
         return `
           <div class="phrase-slot tied" data-index="${i}">
-            <div class="phrase-chip phrase-chip-tied">${lastKey}</div>
+            <div class="phrase-chip phrase-chip-tied">${chipHTML(lastNote)}</div>
           </div>
         `;
       }
       return `<div class="phrase-slot" data-index="${i}"></div>`;
     }).join('');
+    updateOctaveControls();
+  }
+
+  function updateOctaveControls() {
+    const note = selectedIndex != null ? gridSlots[selectedIndex] : null;
+    if (!note) {
+      octaveLabel.textContent = 'ノーツを選択すると、オクターブを変更できます';
+      octValueLabel.textContent = '';
+      octMinusBtn.disabled = true;
+      octPlusBtn.disabled = true;
+      return;
+    }
+    octaveLabel.textContent = `選択中：${note.key}（${selectedIndex + 1}番目）`;
+    octValueLabel.textContent = note.oct ? octLabel(note.oct) : '±0';
+    octMinusBtn.disabled = (note.oct || 0) <= MIN_OCT;
+    octPlusBtn.disabled = (note.oct || 0) >= MAX_OCT;
+  }
+
+  function shiftSelectedOctave(delta) {
+    const note = selectedIndex != null ? gridSlots[selectedIndex] : null;
+    if (!note) return;
+    const next = Math.max(MIN_OCT, Math.min(MAX_OCT, (note.oct || 0) + delta));
+    if (next === (note.oct || 0)) return;
+    gridSlots[selectedIndex] = { key: note.key, oct: next };
+    renderPhraseUI();
+    applyGridPhrase();
   }
 
   function applyGridPhrase() {
@@ -1330,6 +1394,7 @@
       ? gridSlots.concat(new Array(newSize - gridSlots.length).fill(null))
       : gridSlots.slice(0, newSize);
     numRows = clamped;
+    if (selectedIndex != null && selectedIndex >= newSize) selectedIndex = null;
     updateRowControls();
     renderPhraseUI();
     applyGridPhrase();
@@ -1374,16 +1439,17 @@
     e.preventDefault();
     const targetIndex = Number(slot.dataset.index);
     if (phraseDragSource.from === 'palette') {
-      gridSlots[targetIndex] = phraseDragSource.key;
+      gridSlots[targetIndex] = { key: phraseDragSource.key, oct: 0 };
     } else {
       const srcIndex = phraseDragSource.index;
       if (srcIndex !== targetIndex) {
-        // 左右の入れ替え
+        // 左右の入れ替え（オクターブも一緒に移動する）
         const tmp = gridSlots[targetIndex];
         gridSlots[targetIndex] = gridSlots[srcIndex];
         gridSlots[srcIndex] = tmp;
       }
     }
+    selectedIndex = targetIndex; // 置いた直後にそのままオクターブを調整できるようにする
     phraseDragSource = null;
     renderPhraseUI();
     applyGridPhrase();
@@ -1393,11 +1459,23 @@
     // グリッドの外（有効なドロップ先以外）に離した場合はそのマスを削除する
     if (phraseDragSource && phraseDragSource.from === 'grid' && e.dataTransfer.dropEffect === 'none') {
       gridSlots[phraseDragSource.index] = null;
+      if (selectedIndex === phraseDragSource.index) selectedIndex = null;
       renderPhraseUI();
       applyGridPhrase();
     }
     phraseDragSource = null;
   });
+
+  // マスのクリックで選択（もう一度クリックで解除）。選択中のノーツのオクターブを＋/－で変更する
+  phraseGrid.addEventListener('click', (e) => {
+    const chip = e.target.closest('.phrase-chip[data-source="grid"]');
+    if (!chip) return;
+    const idx = Number(chip.dataset.index);
+    selectedIndex = selectedIndex === idx ? null : idx;
+    renderPhraseUI();
+  });
+  octMinusBtn.addEventListener('click', () => shiftSelectedOctave(-1));
+  octPlusBtn.addEventListener('click', () => shiftSelectedOctave(1));
 
   renderPhraseUI();
   updateRowControls();
@@ -1521,14 +1599,21 @@
       const step = timelineSteps[i];
       const durMs = step.type === 'note' ? noteMs() * (1 + (step.hold || 0)) : leadMs();
       let slideMs = 0, up = true, isUnison = false;
+      let toneDelay = 0, iconDelay = 0, iconDur = 0;
       if (i > 0) {
         up = directionAt(timelineSteps, i - 1);
         const ivStep = intervalAt(timelineSteps, i - 1);
         isUnison = !!ivStep && ivStep.iv.st === 0;
-        slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, durMs * 0.7);
+        // 画面側と同じ式：スライド時間はタイ（hold）を含まない基本の長さを基準にする
+        const baseDur = step.type === 'note' ? noteMs() : leadMs();
+        slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, baseDur * 0.7);
+        if (step.type === 'note') {
+          const nt = noteTiming(slideMs, durMs);
+          toneDelay = nt.toneDelay; iconDelay = nt.iconDelay; iconDur = nt.iconDur;
+        }
       }
       const hasIconAnim = step.type === 'note' && i > 0 && !isUnison;
-      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, index: i });
+      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, toneDelay, iconDelay, iconDur, index: i });
       t += durMs;
     }
     return { segs, totalMs: t };
@@ -1725,7 +1810,7 @@
     const d = DEG[seg.step.key];
     let iconOpacity = 1, iconTranslateY = 0;
     if (seg.hasIconAnim) {
-      const raw = clamp01((localMs - seg.slideMs) / seg.slideMs);
+      const raw = clamp01((localMs - seg.iconDelay) / seg.iconDur);
       const e = easeIcon(raw);
       iconOpacity = e;
       const dirSign = seg.up ? 1 : -1;
@@ -1738,9 +1823,27 @@
       ctx.save();
       ctx.fillStyle = '#F3F6FF';
       ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
-      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(seg.step.key, w / 2, iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE);
+      const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE;
+      const oct = octLabel(seg.step.oct);
+      if (!oct) {
+        ctx.textAlign = 'center';
+        ctx.fillText(seg.step.key, w / 2, labelY);
+      } else {
+        // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
+        const keyW = ctx.measureText(seg.step.key).width;
+        const gap = 8 * EXPORT_SCALE;
+        const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
+        ctx.font = badgeFont;
+        const badgeW = ctx.measureText(oct).width;
+        const startX = w / 2 - (keyW + gap + badgeW) / 2;
+        ctx.textAlign = 'left';
+        ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+        ctx.fillText(seg.step.key, startX, labelY);
+        ctx.font = badgeFont;
+        ctx.globalAlpha = 0.8;
+        ctx.fillText(oct, startX + keyW + gap, labelY);
+      }
       ctx.restore();
     }
   }
@@ -1948,11 +2051,9 @@
       for (let i = 0; i < segs.length; i++) {
         const seg = segs[i];
         if (seg.step.type !== 'note') continue;
-        const rawDelay = i === 0 ? 0 : seg.slideMs * 2;
-        const delay = Math.max(0, Math.min(rawDelay, seg.durMs * 0.6));
-        const atSec = audioBase + (seg.startMs + delay) / 1000;
+        const atSec = audioBase + (seg.startMs + seg.toneDelay) / 1000;
         const durSec = (seg.durMs / 1000) * 0.92;
-        scheduleExportTone(exportAudioCtx, audioDest, DEG[seg.step.key].semitone, atSec, durSec);
+        scheduleExportTone(exportAudioCtx, audioDest, noteSemitone(seg.step), atSec, durSec);
       }
     }
 
