@@ -1,0 +1,2223 @@
+<div id="app-root"></div>
+<style>
+  #app-root {
+    --stage-w: 300px;
+    --ink: #f4f1ea;
+    --muted: rgba(244,241,234,0.6);
+    --accent-blue: #3B82F6;
+    font-family: 'Hiragino Maru Gothic ProN', 'Yu Gothic', 'Rounded Mplus 1c', 'Zen Maru Gothic', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: radial-gradient(ellipse at 50% -10%, #171B33 0%, #0A0E1A 55%);
+    padding: 32px 16px 40px;
+    box-sizing: border-box;
+    gap: 22px;
+    color: #F0EDFF;
+  }
+  #app-root * { box-sizing: border-box; }
+
+  .brand { text-align: center; order: 2; }
+  .brand .eyebrow-label { font-size: 10px; letter-spacing: 0.32em; color: #8B87A8; margin-bottom: 4px; }
+  .brand .title { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
+  /* 縦積み時もタイトルはコントローラー（panel-box）の直上に来るよう順序を入れ替える */
+  .frame { order: 1; }
+  .panel-box { order: 3; }
+
+  /* ===== 横幅が十分な画面ではビュー（frame）とコントローラー（panel-box）を
+     横並びにする。タイトル（brand）はコントローラー側の上に配置する ===== */
+  @media (min-width: 860px) {
+    #app-root {
+      display: grid;
+      grid-template-columns: auto minmax(300px, 380px);
+      grid-template-areas:
+        "frame brand"
+        "frame panel";
+      align-items: start;
+      justify-content: center;
+      gap: 16px 40px;
+    }
+    .brand { grid-area: brand; text-align: left; align-self: end; }
+    .frame { grid-area: frame; align-self: center; }
+    .panel-box { grid-area: panel; }
+  }
+
+  .frame {
+    width: var(--stage-w);
+    max-width: 88vw;
+    aspect-ratio: 390 / 844;
+    position: relative;
+    overflow: hidden;
+    border-radius: 34px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 6px #0D1024, inset 0 0 0 1px rgba(255,255,255,0.08);
+    background: #050710;
+  }
+
+  /* ===== 宇宙背景（スターフィールド）：ノートパネルのすりガラス越しに見える ===== */
+  .frame-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 28% 18%, #10163a 0%, #070914 45%, #020207 100%);
+  }
+  .frame-bg .nebula {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(48px);
+    opacity: 0.32;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  .frame-bg .star {
+    position: absolute;
+    border-radius: 50%;
+    background: #fff;
+  }
+  .frame-bg .star.twinkle {
+    animation: starTwinkle var(--tw-dur, 3.4s) ease-in-out infinite;
+    animation-delay: var(--tw-delay, 0s);
+  }
+  @keyframes starTwinkle {
+    0%, 100% { opacity: var(--s-op, 0.8); }
+    50%      { opacity: calc(var(--s-op, 0.8) * 0.2); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .frame-bg .star.twinkle { animation: none; opacity: var(--s-op, 0.8); }
+  }
+
+  .track { position: absolute; inset: 0; z-index: 1; }
+  .panel {
+    position: absolute;
+    left: 0; right: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  /* ユニゾン（音高が変わらない）遷移用：上下ではなく左右にスライドさせる */
+  .panel.panel-h { right: auto; width: 100%; }
+  .panel-note, .panel-blank {
+    /* 白よりの青、すりガラス越しに宇宙背景が透けて見える */
+    background: linear-gradient(165deg, rgba(214,228,255,0.22), rgba(190,206,255,0.07));
+    backdrop-filter: blur(22px) saturate(1.35);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35);
+    border-top: 1px solid rgba(255,255,255,0.26);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.22),
+      inset 0 -26px 46px rgba(150,180,255,0.05);
+    gap: 14px;
+  }
+  .panel-interval {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0 22px 108px;
+    overflow: hidden;
+  }
+  .iv-num { position: absolute; top: -6px; left: 6px; font-size: 122px; font-weight: 800; line-height: 1; }
+  .iv-semitone-label { font-size: 12px; opacity: 0.65; margin-bottom: 2px; }
+  .iv-name { font-size: 21px; font-weight: 800; margin-bottom: 12px; }
+  .iv-colorname { font-size: 13px; font-weight: 700; opacity: 0.9; margin-bottom: 6px; }
+  .iv-nuance { font-size: 10.5px; opacity: 0.6; line-height: 1.6; }
+
+  /* ===== インターバル色が見えている間の縦方向アニメーション ===== */
+  /* 虹彩（イリデッセンス）が音程の向きへ縦に流れる。
+     ベースの確定カラーは変えず、ブレンドモードで上に重ねて発色させる。
+     移動距離・伸び・ぼけ・発色・色相の振れ幅すべてを半音距離に連動させ、
+     1半音は控えめ、12半音は劇的に見えるようにしている。 */
+  .iv-iris {
+    position: absolute;
+    left: -25%; right: -25%;
+    top: 0;
+    height: 100%;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    opacity: var(--iris-strength, 0.9);
+    background: linear-gradient(to bottom,
+      transparent 0%,
+      rgba(255, 60, 170, 0.55) 14%,
+      rgba(255, 170, 40, 0.60) 30%,
+      rgba(120, 255, 200, 0.60) 46%,
+      rgba(80, 170, 255, 0.60) 62%,
+      rgba(190, 110, 255, 0.55) 78%,
+      transparent 100%);
+    filter: blur(16px) saturate(1.5);
+    will-change: transform, filter;
+  }
+  .iv-iris.up   { animation: ivIrisUp   var(--sweep-dur, 320ms) cubic-bezier(.3,0,.25,1) forwards; }
+  .iv-iris.down { animation: ivIrisDown var(--sweep-dur, 320ms) cubic-bezier(.3,0,.25,1) forwards; }
+
+  @keyframes ivIrisUp {
+    from {
+      transform: translateY(var(--iris-travel, 130%)) scaleY(var(--iris-stretch, 1.2));
+      filter: blur(calc(var(--iris-blur, 14px) * 1.6)) saturate(1.1) hue-rotate(calc(var(--hue-span, 60deg) * -0.5));
+    }
+    50% {
+      filter: blur(var(--iris-blur, 14px)) saturate(var(--iris-sat, 2)) hue-rotate(calc(var(--hue-span, 60deg) * 0.25));
+    }
+    to {
+      transform: translateY(calc(var(--iris-travel, 130%) * -1)) scaleY(var(--iris-stretch, 1.2));
+      filter: blur(calc(var(--iris-blur, 14px) * 1.6)) saturate(1.1) hue-rotate(var(--hue-span, 60deg));
+    }
+  }
+  @keyframes ivIrisDown {
+    from {
+      transform: translateY(calc(var(--iris-travel, 130%) * -1)) scaleY(var(--iris-stretch, 1.2));
+      filter: blur(calc(var(--iris-blur, 14px) * 1.6)) saturate(1.1) hue-rotate(var(--hue-span, 60deg));
+    }
+    50% {
+      filter: blur(var(--iris-blur, 14px)) saturate(var(--iris-sat, 2)) hue-rotate(calc(var(--hue-span, 60deg) * 0.25));
+    }
+    to {
+      transform: translateY(var(--iris-travel, 130%)) scaleY(var(--iris-stretch, 1.2));
+      filter: blur(calc(var(--iris-blur, 14px) * 1.6)) saturate(1.1) hue-rotate(calc(var(--hue-span, 60deg) * -0.5));
+    }
+  }
+
+  /* 虹彩の芯となる高輝度バンド。距離が大きいほど細く鋭く、遠くまで走り抜ける */
+  .iv-spec {
+    position: absolute;
+    left: -25%; right: -25%;
+    height: var(--spec-h, 26%);
+    pointer-events: none;
+    mix-blend-mode: screen;
+    background: linear-gradient(to bottom,
+      transparent 0%,
+      rgba(255,255,255,var(--spec-strength, 0.35)) 50%,
+      transparent 100%);
+    filter: blur(var(--spec-blur, 7px));
+    will-change: transform;
+  }
+  .iv-spec.up   { animation: ivSpecUp   var(--sweep-dur, 320ms) cubic-bezier(.25,0,.2,1) forwards; }
+  .iv-spec.down { animation: ivSpecDown var(--sweep-dur, 320ms) cubic-bezier(.25,0,.2,1) forwards; }
+
+  @keyframes ivSpecUp {
+    from { transform: translateY(var(--spec-travel, 420%)) scaleY(var(--spec-stretch, 1)); opacity: 0; }
+    22%  { opacity: 1; }
+    78%  { opacity: 1; }
+    to   { transform: translateY(calc(var(--spec-travel, 420%) * -1)) scaleY(var(--spec-stretch, 1)); opacity: 0; }
+  }
+  @keyframes ivSpecDown {
+    from { transform: translateY(calc(var(--spec-travel, 420%) * -1)) scaleY(var(--spec-stretch, 1)); opacity: 0; }
+    22%  { opacity: 1; }
+    78%  { opacity: 1; }
+    to   { transform: translateY(var(--spec-travel, 420%)) scaleY(var(--spec-stretch, 1)); opacity: 0; }
+  }
+
+  /* テキストのドリフト。距離が大きいほど大きく流れる */
+  .panel-interval .iv-text.up   { animation: ivDriftUp   var(--sweep-dur, 320ms) cubic-bezier(.2,0,.2,1) forwards; }
+  .panel-interval .iv-text.down { animation: ivDriftDown var(--sweep-dur, 320ms) cubic-bezier(.2,0,.2,1) forwards; }
+
+  @keyframes ivDriftUp {
+    from { transform: translateY(var(--drift, 10px)); }
+    to   { transform: translateY(calc(var(--drift, 10px) * -1)); }
+  }
+  @keyframes ivDriftDown {
+    from { transform: translateY(calc(var(--drift, 10px) * -1)); }
+    to   { transform: translateY(var(--drift, 10px)); }
+  }
+
+  /* 大きな半音数字は、距離が大きいほど大きくドリフトしつつスケールも変化させる */
+  .panel-interval .iv-num.up   { animation: ivNumUp   var(--sweep-dur, 320ms) cubic-bezier(.2,0,.2,1) forwards; }
+  .panel-interval .iv-num.down { animation: ivNumDown var(--sweep-dur, 320ms) cubic-bezier(.2,0,.2,1) forwards; }
+
+  @keyframes ivNumUp {
+    from { transform: translateY(calc(var(--drift, 10px) * 2)) scale(var(--num-scale, 1)); opacity: 0.35; }
+    45%  { opacity: 1; }
+    to   { transform: translateY(calc(var(--drift, 10px) * -2)) scale(1); opacity: 0.75; }
+  }
+  @keyframes ivNumDown {
+    from { transform: translateY(calc(var(--drift, 10px) * -2)) scale(var(--num-scale, 1)); opacity: 0.35; }
+    45%  { opacity: 1; }
+    to   { transform: translateY(calc(var(--drift, 10px) * 2)) scale(1); opacity: 0.75; }
+  }
+
+  /* ===== 線状の光（SF的なストリーク）=====
+     細く鋭いラインが、わずかに傾いた自分の軸に沿ってイーズインアウトで流れる。
+     虹彩の上に重ねて奥行きを出す。 */
+  .iv-particles {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: screen;
+    opacity: var(--particle-opacity, 1);
+  }
+  .iv-particle {
+    position: absolute;
+    opacity: 0;
+    /* 芯はくっきり、両端だけ短くフェードさせて線の鋭さを保つ */
+    background: linear-gradient(var(--p-grad-dir, to bottom),
+      transparent 0%,
+      var(--p-color, rgba(255,255,255,0.95)) 12%,
+      var(--p-color, rgba(255,255,255,0.95)) 88%,
+      transparent 100%);
+    box-shadow: 0 0 3px var(--p-glow, rgba(180,200,255,0.55));
+    transform-origin: 50% 50%;
+    will-change: transform, opacity;
+  }
+  /* 傾きなし。ライン自身の軸に沿ってまっすぐ流れる */
+  .iv-particle.up   { animation: ivPartUp   var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
+  .iv-particle.down { animation: ivPartDown var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
+  .iv-particle.side { animation: ivPartSide var(--p-dur, 320ms) cubic-bezier(.42,.03,.55,.98) var(--p-delay, 0ms) forwards; }
+
+  @keyframes ivPartUp {
+    from { transform: translateY(var(--p-travel, 260px)) scaleY(0.85); opacity: 0; }
+    18%  { opacity: var(--p-op, 0.9); }
+    72%  { opacity: var(--p-op, 0.9); }
+    to   { transform: translateY(calc(var(--p-travel, 260px) * -1)) scaleY(1.25); opacity: 0; }
+  }
+  @keyframes ivPartDown {
+    from { transform: translateY(calc(var(--p-travel, 260px) * -1)) scaleY(0.85); opacity: 0; }
+    18%  { opacity: var(--p-op, 0.9); }
+    72%  { opacity: var(--p-op, 0.9); }
+    to   { transform: translateY(var(--p-travel, 260px)) scaleY(1.25); opacity: 0; }
+  }
+  @keyframes ivPartSide {
+    from { transform: translateX(var(--p-travel, 260px)) scaleX(0.85); opacity: 0; }
+    18%  { opacity: var(--p-op, 0.9); }
+    72%  { opacity: var(--p-op, 0.9); }
+    to   { transform: translateX(calc(var(--p-travel, 260px) * -1)) scaleX(1.25); opacity: 0; }
+  }
+
+  .iv-text { position: relative; z-index: 2; }
+  .panel-interval .iv-num { z-index: 2; }
+  .iv-dir { z-index: 2; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .iv-iris, .iv-spec, .iv-particle, .panel-interval .iv-num, .panel-interval .iv-text { animation: none !important; }
+    .iv-iris { opacity: 0.35; }
+    .iv-particles { display: none; }
+    .glyph-wrap.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
+  }
+  .iv-dir { position: absolute; top: 18px; right: 20px; font-size: 11px; opacity: 0.75; letter-spacing: 0.04em; }
+
+  .deg-label { font-size: 26px; font-weight: 800; color: #F3F6FF; letter-spacing: 0.04em; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
+  .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
+
+  /* ===== 図形アイコンの登場アニメーション（パネル全体のスライドとは分離） =====
+     パネルのスライドが完了するまではフェードイン前の状態で待機させ（animation-delay）、
+     スライド完了後にアイコンだけが独立して動いて見えるようにする。
+     上昇：基準点より約40px下からフェードインしながら上がってくる
+     下降：その逆（上から下がってくる） */
+  .glyph-wrap.icon-enter {
+    animation-duration: var(--icon-anim-dur, 260ms);
+    animation-delay: var(--icon-anim-delay, 0ms);
+    animation-timing-function: cubic-bezier(.22,.9,.32,1);
+    animation-fill-mode: both;
+  }
+  .glyph-wrap.icon-enter.up   { animation-name: iconEnterUp; }
+  .glyph-wrap.icon-enter.down { animation-name: iconEnterDown; }
+  @keyframes iconEnterUp   { from { transform: translateY(40px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterDown { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .chip {
+    background: rgba(0,0,0,0.32);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 999px;
+    color: var(--ink);
+    padding: 6px 13px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  /* フレーズガイド：進行バーの上に配置 */
+  .phrase-guide {
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink);
+    background: rgba(0,0,0,0.32);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 999px;
+    padding: 6px 13px;
+    white-space: nowrap;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .phrase-guide strong { color: #fff; letter-spacing: 0.06em; }
+
+  .bottom-zone { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 6; }
+  .bottom-hideable { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; transition: opacity 200ms ease; }
+  .progress-track { width: 90%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 999px; }
+  .controls { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .controls-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .ctrl-btn { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.28); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; backdrop-filter: blur(6px); }
+  .ctrl-btn:hover { background: rgba(0,0,0,0.4); }
+  .ctrl-btn.loop-on { color: var(--accent-blue); border-color: var(--accent-blue); }
+  .ctrl-btn.loop-off { opacity: 0.4; }
+  .bpm-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 6px 12px; backdrop-filter: blur(6px); }
+  .bpm-group .bpm-unit-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; }
+  .bpm-group input[type="range"] { width: 88px; margin: 0; accent-color: var(--accent-blue); }
+  .bpm-group input[type="number"] {
+    width: 42px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    padding: 3px 2px;
+    font-family: inherit;
+    -moz-appearance: textfield;
+  }
+  .bpm-group input[type="number"]::-webkit-outer-spin-button,
+  .bpm-group input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .hidden { opacity: 0 !important; pointer-events: none !important; }
+
+  .panel-box {
+    width: 100%;
+    max-width: 380px;
+    background: #0D1024;
+    border: 1px solid #202544;
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .playback-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #202544;
+  }
+  .panel-box label { font-size: 10.5px; color: #8B87A8; }
+  .phrase-row-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .reset-btn {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: 1px solid #2E3358;
+    background: #050710;
+    color: #8B87A8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+  .reset-btn:hover { color: #F0EDFF; border-color: #3a4270; }
+  .reset-btn:disabled { opacity: 0.35; cursor: default; }
+  .reset-btn:disabled:hover { color: #8B87A8; border-color: #2E3358; }
+  .reset-btn.small { width: 22px; height: 22px; font-size: 12px; border-radius: 6px; }
+  .phrase-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .row-count-label { font-size: 10.5px; color: #8B87A8; min-width: 22px; text-align: center; }
+
+  /* ===== フレーズ入力：ドラッグ＆ドロップのパレット＋32グリッド（8列×4段） ===== */
+  .phrase-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: #050710;
+    border: 1px solid #2E3358;
+    border-radius: 8px;
+  }
+  .phrase-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .phrase-slot {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    border: 1px dashed #2E3358;
+    background: #050710;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .phrase-slot.filled { border-style: solid; border-color: #2E3358; }
+  .phrase-slot.tied { border-style: dashed; }
+  .phrase-slot.drag-over { border-color: var(--accent-blue); background: rgba(59,130,246,0.15); }
+  .phrase-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px; height: 32px;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid #2E3358;
+    color: #F0EDFF;
+    font-size: 13px;
+    cursor: grab;
+    user-select: none;
+  }
+  .phrase-chip:active { cursor: grabbing; }
+  .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
+  .phrase-chip.dragging { opacity: 0.35; }
+  .phrase-chip-tied { opacity: 0.32; cursor: default; }
+  /* 同音のリピート復帰：暗転してから静かに戻る（横には動かさない） */
+  .blackout-layer {
+    position: absolute; inset: 0; pointer-events: none;
+    background: #000;
+    animation: blackoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
+  }
+  @keyframes blackoutFade { from { opacity: 1; } to { opacity: 0; } }
+  .phrase-slot.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
+  .phrase-chip { position: relative; }
+  .oct-mark { position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: var(--accent-blue); line-height: 1; }
+  .octave-row { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .octave-label { font-size: 10px; color: #8B87A8; margin-right: auto; }
+  .deg-label .oct-badge { margin-left: 8px; font-size: 14px; font-weight: 700; opacity: 0.8; vertical-align: middle; }
+  .panel-box .hint { font-size: 9.5px; color: #5B5878; margin-top: 4px; }
+  .panel-box .row { display: flex; gap: 14px; }
+  .panel-box .row > div { flex: 1; }
+  .panel-box input[type="range"] { width: 100%; accent-color: var(--accent-blue); }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .toggle-row label { font-size: 10.5px; color: #8B87A8; }
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track { position: absolute; inset: 0; background: #2E3358; border-radius: 999px; transition: background 150ms ease; cursor: pointer; }
+  .switch .knob { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #8B87A8; transition: transform 150ms ease, background 150ms ease; }
+  .switch input:checked + .track { background: rgba(59,130,246,0.55); }
+  .switch input:checked + .track .knob { transform: translateX(16px); background: var(--accent-blue); }
+
+  /* インターバルのテキスト情報を非表示にするトグル用（左上の半音数字・フレーズ番号も含む） */
+  .frame.hide-iv-text .iv-text,
+  .frame.hide-iv-text .iv-dir,
+  .frame.hide-iv-text .iv-num,
+  .frame.hide-iv-text .deg-label { display: none; }
+
+  /* ===== 動画書き出し ===== */
+  .export-open-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--accent-blue);
+    background: rgba(59,130,246,0.12);
+    color: var(--accent-blue);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .export-open-btn:hover { background: rgba(59,130,246,0.22); }
+  .export-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .export-modal {
+    width: 100%;
+    max-width: 340px;
+    background: #0D1024;
+    border: 1px solid #2E3358;
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .export-modal h3 { margin: 0; font-size: 14px; color: #F0EDFF; }
+  .export-status { font-size: 11px; color: #8B87A8; line-height: 1.6; }
+  .export-progress-track { width: 100%; height: 6px; border-radius: 999px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; }
+  .export-progress-fill { height: 100%; width: 0%; background: var(--accent-blue); transition: width 120ms linear; }
+  .export-buttons { display: flex; gap: 10px; }
+  .export-btn { flex: 1; padding: 10px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .export-btn.secondary { background: #050710; border: 1px solid #2E3358; color: #8B87A8; }
+  .export-btn.secondary:hover { color: #F0EDFF; border-color: #3a4270; }
+  .export-btn.primary { background: var(--accent-blue); border: 1px solid var(--accent-blue); color: #fff; }
+  .export-btn.primary:hover { background: #2563EB; }
+  .export-btn:disabled { opacity: 0.5; cursor: default; }
+</style>
+
+
+<script>
+(function () {
+  const root = document.getElementById('app-root');
+
+  // ============================================================
+  // コアエンジン：度数記号12種／インターバル色13段階（v4確定データ）
+  // ============================================================
+  const DEGREES = [
+    { key: '①', semitone: 0,  shape: 'star',      filled: false },
+    { key: '♭2', semitone: 1, shape: 'rect',      filled: true  },
+    { key: '②', semitone: 2,  shape: 'rect',      filled: false },
+    { key: '♭3', semitone: 3, shape: 'triangle',  filled: true  },
+    { key: '③', semitone: 4,  shape: 'triangle',  filled: false },
+    { key: '④', semitone: 5,  shape: 'square',    filled: false },
+    { key: '♭5', semitone: 6, shape: 'circle',    filled: true  },
+    { key: '⑤', semitone: 7,  shape: 'circle',    filled: false },
+    { key: '♭6', semitone: 8, shape: 'moonThick', filled: true  },
+    { key: '⑥', semitone: 9,  shape: 'moonThin',  filled: false },
+    { key: '♭7', semitone: 10,shape: 'diamond',   filled: true  },
+    { key: '⑦', semitone: 11, shape: 'diamond',   filled: false },
+    { key: '⑧', semitone: 12, shape: 'star',      filled: false },
+  ];
+  const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
+
+  const INTERVALS = [
+    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ブラック（ブラックアウト）', grad: ['#000000','#020204','#05060B','#0A0C14'], text:'#fff', nuance:'音が移動していない（同じ音のまま）' },
+    { st: 1,  name: '短2度',                       colorName: '青 メタリック',          grad: ['#3B82F6','#2359CB','#1744B5','#0B2F9F'], text:'#fff', nuance:'最も近い、ぶつかりの音（半音）' },
+    { st: 2,  name: '長2度',                       colorName: '赤 メタリック',          grad: ['#EF4444','#BF2929','#A61C1C','#8E0E0E'], text:'#fff', nuance:'明るくはっきりとした上昇' },
+    { st: 3,  name: '短3度',                       colorName: '紫 メタリック',          grad: ['#A78BFA','#9070E1','#7A54C8','#6339AE','#4C1D95'], text:'#fff', nuance:'哀しく神秘的な暗さ' },
+    { st: 4,  name: '長3度',                       colorName: 'ゴールド メタリック',    grad: ['#FBBF24','#DA9D1F','#BA7A1A','#995814','#78350F'], text:'#1a1a1a', nuance:'明るく安定した響き' },
+    { st: 5,  name: '完全4度',                     colorName: 'エメラルド メタリック',  grad: ['#34D399','#29B282','#1D916A','#126F53','#064E3B'], text:'#1a1a1a', nuance:'安定・清潔、落ち着きの中間点' },
+    { st: 6,  name: '増4度 / 減5度（トライトーン）', colorName: 'ガンメタル',            grad: ['#64748B','#414F63','#303C4F','#1E293B'], text:'#fff', nuance:'ちょうど中間で不安定、悪魔の音程' },
+    { st: 7,  name: '完全5度',                     colorName: 'ライム',                grad: ['#A3E635','#71A424','#58831B','#3F6212'], text:'#1a1a1a', nuance:'安定・力強い響き' },
+    { st: 8,  name: '増5度 / 短6度',                colorName: 'カッパー（銅）メタリック', grad: ['#F97316','#BB5014','#9B3F13','#7C2D12'], text:'#fff', nuance:'5度を超えた広がり' },
+    { st: 9,  name: '長6度',                       colorName: 'ターコイズ メタリック',  grad: ['#22D3EE','#1CABC4','#158399','#0F5B6F','#083344'], text:'#1a1a1a', nuance:'広がり、問題なく緊張の緩和' },
+    { st: 10, name: '短7度',                       colorName: 'マゼンタ メタリック',    grad: ['#F472B6','#D35CA6','#B24696','#913085','#701A75'], text:'#fff', nuance:'緊張感、ブルース的、解決への一歩' },
+    { st: 11, name: '長7度',                       colorName: 'プラチナ メタリック',    grad: ['#E2E8F0','#BBC3CE','#959FAD','#6E7A8B','#475569'], text:'#1a1a1a', nuance:'解決へ→強い引力（一歩手前）' },
+    { st: 12, name: '完全8度（オクターブ）',        colorName: 'パール（虹色）',         grad: ['#FFE4E6','#E0B4F1','#C084FC','#9275F7','#6366F1'], text:'#1a1a1a', nuance:'同じ音に戻る完全な一周' },
+  ];
+  const IV = Object.fromEntries(INTERVALS.map(i => [i.st, i]));
+
+  // ノーツ = { key: '③', oct: -1|0|1 }。記号は変えず、オクターブは別の値として持つ
+  const MIN_OCT = -1, MAX_OCT = 1;
+  function noteSemitone(n) { return DEG[n.key].semitone + 12 * (n.oct || 0); }
+  function octLabel(oct) { return oct > 0 ? '+' + oct : oct < 0 ? '−' + Math.abs(oct) : ''; }
+
+  // インターバルは半音距離で決まる。想定上限（5.5音=11半音）を超えた場合は1オクターブ分を折り返して色を決める
+  function resolveInterval(a, b) {
+    let raw = Math.abs(noteSemitone(a) - noteSemitone(b));
+    if (raw > 12) raw = raw % 12 || 12;
+    return IV[raw] || IV[0];
+  }
+  function radialGrad(stops) {
+    const n = stops.length;
+    const parts = stops.map((c, i) => `${c} ${Math.round((i/(n-1))*100)}%`);
+    return `radial-gradient(circle at 30% 22%, ${parts.join(', ')})`;
+  }
+  // 図形の定義（画面のSVGと動画書き出しのCanvasで共通）。viewBox 100x100 の中で
+  // どの図形も見た目の大きさ（約76〜84）が揃うように設計している
+  function starPath(R, ratio) {
+    const cy = 50 - (1.809 * R) / 2 + R; // 外接の高さの中心がviewBoxの中央に来るよう配置
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const rad = (i % 2 === 0 ? R : R * ratio);
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      pts.push(`${(50 + rad * Math.cos(ang)).toFixed(2)} ${(cy + rad * Math.sin(ang)).toFixed(2)}`);
+    }
+    return `M${pts.join(' L')} Z`;
+  }
+  // 三日月：外円(R)から内円(r、中心をoffだけ右にずらす)を抜いた形。左右の中心が揃うよう配置する
+  function crescentPath(R, r, off) {
+    const x = (R * R - r * r + off * off) / (2 * off);
+    const y = Math.sqrt(R * R - x * x);
+    const cx = 50 + (R - x) / 2;
+    const tipX = (cx + x).toFixed(2);
+    const innerLarge = x > off ? 1 : 0;
+    return `M${tipX} ${(50 - y).toFixed(2)} A${R} ${R} 0 1 0 ${tipX} ${(50 + y).toFixed(2)} A${r} ${r} 0 ${innerLarge} 1 ${tipX} ${(50 - y).toFixed(2)} Z`;
+  }
+  const GLYPH_SIZE = 120;
+  const GLYPH_PATHS = {
+    star:      starPath(44, 0.46),
+    rect:      'M14 35 H86 A5 5 0 0 1 91 40 V60 A5 5 0 0 1 86 65 H14 A5 5 0 0 1 9 60 V40 A5 5 0 0 1 14 35 Z',
+    triangle:  'M50 15 L90 85 L10 85 Z',
+    square:    'M18 18 H82 V82 H18 Z',
+    circle:    'M12 50 A38 38 0 1 0 88 50 A38 38 0 1 0 12 50 Z',
+    diamond:   'M50 10 L90 50 L50 90 L10 50 Z',
+    moonThick: crescentPath(40, 30, 20),
+    moonThin:  crescentPath(40, 36, 16),
+  };
+  function glyphSVG(shape, filled, color) {
+    const fill = filled ? color : 'none';
+    return `<svg width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" viewBox="0 0 100 100">`
+      + `<path d="${GLYPH_PATHS[shape] || ''}" fill="${fill}" stroke="${color}" stroke-width="7" stroke-linejoin="round"/></svg>`;
+  }
+
+  // 宇宙背景（スターフィールド）を一度だけ生成。ノートパネルのすりガラス越しに透けて見える
+  function renderStarfield(container) {
+    const nebulae = [
+      { x: 14, y: 12, size: 220, color: 'rgba(90,110,255,0.9)' },
+      { x: 78, y: 30, size: 180, color: 'rgba(160,90,255,0.8)' },
+      { x: 40, y: 78, size: 240, color: 'rgba(60,150,255,0.7)' },
+    ];
+    let html = nebulae.map(n =>
+      `<div class="nebula" style="left:${n.x}%;top:${n.y}%;width:${n.size}px;height:${n.size}px;` +
+      `transform:translate(-50%,-50%);background:radial-gradient(circle, ${n.color} 0%, transparent 70%);"></div>`
+    ).join('');
+
+    const starCount = 90;
+    for (let i = 0; i < starCount; i++) {
+      const r = (n) => Math.random() * n;
+      const left = r(100).toFixed(1);
+      const top = r(100).toFixed(1);
+      const size = (0.6 + r(1.8)).toFixed(2);
+      const op = (0.25 + r(0.65)).toFixed(2);
+      const twinkle = Math.random() < 0.4;
+      const dur = (2.4 + r(3)).toFixed(2);
+      const delay = r(4).toFixed(2);
+      html += `<div class="star${twinkle ? ' twinkle' : ''}" style="`
+        + `left:${left}%;top:${top}%;width:${size}px;height:${size}px;`
+        + `--s-op:${op};--tw-dur:${dur}s;--tw-delay:${delay}s;opacity:${op};"></div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  function buildSteps(phrase, holds) {
+    const steps = [];
+    phrase.forEach((note, i) => {
+      steps.push({ type: 'note', key: note.key, oct: note.oct || 0, hold: (holds && holds[i]) || 0 });
+      if (i < phrase.length - 1) {
+        const to = phrase[i + 1];
+        const up = noteSemitone(to) >= noteSemitone(note);
+        steps.push({ type: 'interval', from: note.key, to: to.key, iv: resolveInterval(note, to), up });
+      }
+    });
+    return steps;
+  }
+
+  function directionAt(steps, i) {
+    const cur = steps[i];
+    if (cur.type === 'interval') return cur.up;
+    const nxt = steps[(i + 1) % steps.length];
+    return nxt.type === 'interval' ? nxt.up : true;
+  }
+
+  // その遷移に関わるインターバル（半音距離0＝ユニゾンかどうかの判定に使う）
+  function intervalAt(steps, i) {
+    const cur = steps[i];
+    if (cur.type === 'interval') return cur;
+    const nxt = steps[(i + 1) % steps.length];
+    return nxt.type === 'interval' ? nxt : null;
+  }
+
+  // 垂直に流れる線状の光を生成。半音距離が大きいほど「多く・長く・速く」流れる
+  function particlesHTML(iv, dir, durationMs) {
+    // ユニゾン（横向き）は半音距離が常に0で強さが最小になってしまうため、
+    // 縦と同じ見た目になるよう横向きは常に最大強度（縦の12半音相当）にする
+    const p = dir === 'side' ? 1 : Math.pow(iv.st / 12, 0.85);
+    const count = Math.round((34 + p * 86) * PARTICLE_SCALE);  // 本数     34 → 120
+    const travelBase = 160 + p * 460;                          // 移動距離 160px → 620px
+    const lenBase = 45 + p * 190;                              // 線の長さ 45px → 235px
+    // 白〜ラベンダー〜ブルーの寒色パレット
+    const palette = [
+      ['rgba(255,255,255,0.95)', 'rgba(200,215,255,0.6)'],
+      ['rgba(226,232,255,0.92)', 'rgba(170,190,255,0.6)'],
+      ['rgba(190,200,255,0.90)', 'rgba(140,160,255,0.6)'],
+      ['rgba(160,170,255,0.88)', 'rgba(120,130,255,0.6)'],
+      ['rgba(140,150,250,0.85)', 'rgba(110,120,255,0.55)'],
+    ];
+    const horizontal = dir === 'side';
+    let html = '';
+    for (let i = 0; i < count; i++) {
+      const r = (n) => Math.random() * n;
+      const len = (lenBase * (0.3 + r(1.3))).toFixed(0);   // 線の長さは大きくばらつかせる
+      const thin = (0.9 + r(1.1)).toFixed(2);              // 0.9〜2.0px の細い線
+      const travel = (travelBase * (0.7 + r(0.6))).toFixed(0);
+      const delay = Math.round(r(durationMs * 0.3));
+      const dur = Math.round(durationMs * (0.6 + r(0.45)));
+      const op = (0.32 + r(0.62)).toFixed(2);
+      const [color, glow] = palette[Math.floor(r(palette.length))];
+      // 縦流れ：横位置をランダムに散らし、線は縦長。横流れ：縦位置をランダムに散らし、線は横長
+      const left = horizontal ? -30 + r(160) : -4 + r(108);
+      const top = horizontal ? -4 + r(108) : -30 + r(160);
+      const w = horizontal ? len : thin;
+      const h = horizontal ? thin : len;
+      const gradDir = horizontal ? 'to right' : 'to bottom';
+      html += `<span class="iv-particle ${dir}" style="`
+        + `left:${left.toFixed(1)}%;top:${top.toFixed(1)}%;`
+        + `width:${w}px;height:${h}px;`
+        + `--p-color:${color};--p-glow:${glow};--p-grad-dir:${gradDir};`
+        + `--p-travel:${travel}px;--p-delay:${delay}ms;--p-dur:${dur}ms;--p-op:${op};`
+        + `"></span>`;
+    }
+    return `<div class="iv-particles">${html}</div>`;
+  }
+
+  // ノーツ1つ分の「発音」と「アイコン表示」のタイミング（ms、ステップ開始からの相対）。
+  // アイコンのフェードインは発音の瞬間に完了するよう逆算して開始を決める。
+  // 画面と動画書き出しで同じ値を使う
+  // durMs には「タイを含まない基本のノーツ長（noteMs）」を渡す。タイで長いノーツでも発音位置は他と同じにして、
+  // 発音間隔（拍）が偏らないようにする
+  function noteTiming(slideMs, durMs) {
+    const toneDelay = Math.max(0, Math.min(slideMs * 2, durMs * 0.6));
+    const iconDur = Math.max(80, Math.min(slideMs, toneDelay * 0.6));
+    const iconDelay = Math.max(0, toneDelay - iconDur);
+    return { toneDelay, iconDelay, iconDur };
+  }
+
+  function panelEl(step, durationMs, iconDir, timing) {
+    const el = document.createElement('div');
+    if (step.type === 'blank') {
+      el.className = 'panel panel-blank';
+      if (step.blackout) {
+        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、暗転してから静かに戻る
+        el.innerHTML = `<div class="blackout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
+        return el;
+      }
+      // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
+      el.innerHTML = particlesHTML({ st: 12 }, 'side', Math.round(durationMs || 320));
+      return el;
+    }
+    if (step.type === 'note') {
+      const d = DEG[step.key];
+      el.className = 'panel panel-note';
+      // アイコンのフェードインは発音の瞬間に完了するよう、noteTimingで求めた遅延・長さを使う
+      const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
+      const t = timing || { iconDelay: 0, iconDur: 260 };
+      const enterStyle = iconDir ? ` style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms"` : '';
+      const oct = octLabel(step.oct);
+      const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
+      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}${badge}</div>`;
+      return el;
+    }
+    const iv = step.iv;
+    const dir = step.up ? 'up' : 'down';
+    // 線状の光のみ：音高が変わらない（ユニゾン）場合は上下ではなく横方向に流す
+    const particleDir = iv.st === 0 ? 'side' : dir;
+    // ===== 半音距離との連動（大袈裟版）=====
+    // t = 0（ユニゾン）〜1（オクターブ）。1半音は控えめ、12半音は劇的に見えるよう全方向に効かせる
+    const t = iv.st / 12;
+    const p = Math.pow(t, 0.85);              // 低域を少し持ち上げ、中〜高域の差を強調
+    const irisStrength = (0.22 + p * 1.18) * IRIS_SCALE;  // 発色     0.22 → 1.40
+    const specStrength = (0.06 + p * 0.84) * IRIS_SCALE;  // 芯の輝度 0.06 → 0.90
+    const irisTravel   = 90  + p * 150;       // 移動距離 90% → 240%
+    const irisStretch  = 1.0 + p * 1.5;       // 縦の伸び 1.0 → 2.5（速度感）
+    const irisBlur     = 20  - p * 13;        // ぼけ     20px → 7px（大きいほど鋭い）
+    const irisSat      = 1.2 + p * 1.6;       // 彩度     1.2 → 2.8
+    const hueSpan      = 20  + p * 160;       // 色相の振れ幅 20deg → 180deg
+    const specTravel   = 300 + p * 700;       // 芯の移動 300% → 1000%
+    const specStretch  = 1.0 + p * 1.6;       // 芯の伸び 1.0 → 2.6
+    const specH        = 34  - p * 22;        // 芯の太さ 34% → 12%（細いほど速く見える）
+    const specBlur     = 10  - p * 5;         // 芯のぼけ 10px → 5px
+    const drift        = 2   + p * 46;        // テキスト流れ 2px → 48px
+    const numScale     = 1.0 + p * 0.35;      // 数字のスケール変化 1.0 → 1.35
+
+    el.className = 'panel panel-interval';
+    el.style.background = radialGrad(iv.grad);
+    el.style.color = iv.text;
+    el.style.setProperty('--sweep-dur', `${Math.round(durationMs || 320)}ms`);
+    el.style.setProperty('--iris-strength', irisStrength.toFixed(3));
+    el.style.setProperty('--iris-travel', `${irisTravel.toFixed(1)}%`);
+    el.style.setProperty('--iris-stretch', irisStretch.toFixed(3));
+    el.style.setProperty('--iris-blur', `${irisBlur.toFixed(1)}px`);
+    el.style.setProperty('--iris-sat', irisSat.toFixed(2));
+    el.style.setProperty('--hue-span', `${hueSpan.toFixed(0)}deg`);
+    el.style.setProperty('--spec-strength', specStrength.toFixed(3));
+    el.style.setProperty('--spec-travel', `${specTravel.toFixed(0)}%`);
+    el.style.setProperty('--spec-stretch', specStretch.toFixed(3));
+    el.style.setProperty('--spec-h', `${specH.toFixed(1)}%`);
+    el.style.setProperty('--spec-blur', `${specBlur.toFixed(1)}px`);
+    el.style.setProperty('--drift', `${drift.toFixed(1)}px`);
+    el.style.setProperty('--num-scale', numScale.toFixed(3));
+    el.innerHTML = `
+      ${iv.st === 0 ? '' : `<div class="iv-iris ${dir}"></div><div class="iv-spec ${dir}"></div>`}
+      ${iv.st === 0 ? '' : particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
+      <div class="iv-dir">${iv.st === 0 ? '＝ 同音' : (step.up ? '▲ 上昇' : '▼ 下降')}</div>
+      <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
+      <div class="iv-text ${dir}">
+        <div class="iv-semitone-label">半音</div>
+        <div class="iv-name">${iv.name}</div>
+        <div class="iv-colorname">${iv.colorName}</div>
+        <div class="iv-nuance">${iv.nuance}</div>
+      </div>`;
+    return el;
+  }
+
+  // ============================================================
+  // DOM構築
+  // ============================================================
+  root.innerHTML = `
+    <div class="brand">
+      <div class="eyebrow-label">INTERVAL MAP — PROTOTYPE v19</div>
+      <div class="title">音の地図</div>
+    </div>
+
+    <div class="frame" id="frame">
+      <div class="frame-bg" id="frameBg"></div>
+      <div class="track" id="track"></div>
+
+      <div class="bottom-zone" id="bottomZone">
+        <div class="bottom-hideable" id="bottomHideable">
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-box">
+      <div class="playback-group">
+        <div class="phrase-guide" id="phraseGuideChip">C <strong>MAJOR</strong> &nbsp;/&nbsp; <span id="phraseChip"></span></div>
+        <div class="controls">
+          <div class="controls-buttons">
+            <button class="ctrl-btn" id="playPause">❚❚</button>
+            <button class="ctrl-btn loop-on" id="loopToggle" title="ループ再生 ON">🔁</button>
+            <button class="ctrl-btn" id="audioToggle">🔇</button>
+          </div>
+          <div class="bpm-group" id="bpmGroup">
+            <span class="bpm-unit-label">BPM</span>
+            <input type="range" id="bpmRange" min="60" max="240" step="1" value="120" />
+            <input type="number" id="bpmInput" min="60" max="240" step="1" value="120" inputmode="numeric" />
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="phrase-row-header">
+          <label>フレーズ入力（ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを1マス=1拍ずつ伸ばすタイとして機能）</label>
+          <div class="phrase-header-actions">
+            <button class="reset-btn small" id="rowMinus" title="行を削除（-8ノーツ）">－</button>
+            <span class="row-count-label" id="rowCountLabel">4行</span>
+            <button class="reset-btn small" id="rowPlus" title="行を追加（+8ノーツ）">＋</button>
+            <button class="reset-btn" id="resetPlayback" title="リセットして再生">↺</button>
+          </div>
+        </div>
+        <div class="phrase-grid" id="phraseGrid"></div>
+        <div class="octave-row">
+          <span class="octave-label" id="octaveLabel"></span>
+          <button class="reset-btn small" id="octMinus" title="1オクターブ下げる">－</button>
+          <span class="row-count-label" id="octValueLabel"></span>
+          <button class="reset-btn small" id="octPlus" title="1オクターブ上げる">＋</button>
+        </div>
+        <div class="phrase-palette" id="phrasePalette"></div>
+        <div class="hint">上昇＝下へ／下降＝上へスライド</div>
+      </div>
+      <div>
+        <label id="ratioLabel">音:インターバル比率：4:1（500ms / 125ms）</label>
+        <input type="range" id="ratioRange" min="0" max="4" step="1" value="2" />
+      </div>
+      <div>
+        <label id="irisLabel">虹彩アニメーションの強さ：100%</label>
+        <input type="range" id="irisRange" min="0" max="160" step="5" value="100" />
+      </div>
+      <div>
+        <label id="particleLabel">線状の光の強さ：100%</label>
+        <input type="range" id="particleRange" min="0" max="250" step="5" value="100" />
+      </div>
+      <div class="toggle-row">
+        <label>インターバルのテキスト情報を表示</label>
+        <label class="switch">
+          <input type="checkbox" id="ivTextToggle" checked />
+          <span class="track"><span class="knob"></span></span>
+        </label>
+      </div>
+      <button class="export-open-btn" id="exportOpenBtn">動画として書き出す（MP4）</button>
+    </div>
+
+    <div class="export-modal-backdrop hidden" id="exportModalBackdrop">
+      <div class="export-modal">
+        <h3>動画書き出し（1080×1920）</h3>
+        <div class="toggle-row">
+          <label>音声を含める</label>
+          <label class="switch">
+            <input type="checkbox" id="exportAudioToggle" checked />
+            <span class="track"><span class="knob"></span></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <label>インターバルのテキスト情報を表示</label>
+          <label class="switch">
+            <input type="checkbox" id="exportIvTextToggle" checked />
+            <span class="track"><span class="knob"></span></span>
+          </label>
+        </div>
+        <div class="export-status" id="exportStatus">現在のフレーズを1回分、書き出します。</div>
+        <div class="export-progress-track"><div class="export-progress-fill" id="exportProgressFill"></div></div>
+        <div class="export-buttons">
+          <button class="export-btn secondary" id="exportCancelBtn">キャンセル</button>
+          <button class="export-btn primary" id="exportStartBtn">書き出し開始</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ============================================================
+  // 状態
+  // ============================================================
+  const trackEl = document.getElementById('track');
+  renderStarfield(document.getElementById('frameBg'));
+  const frameEl = document.getElementById('frame');
+  const progressFill = document.getElementById('progressFill');
+  const playPauseBtn = document.getElementById('playPause');
+  const loopToggleBtn = document.getElementById('loopToggle');
+  const bpmRange = document.getElementById('bpmRange');
+  const bpmInput = document.getElementById('bpmInput');
+  const audioToggle = document.getElementById('audioToggle');
+  const bottomHideable = document.getElementById('bottomHideable');
+  const phraseChip = document.getElementById('phraseChip');
+  const phrasePalette = document.getElementById('phrasePalette');
+  const phraseGrid = document.getElementById('phraseGrid');
+  const resetPlaybackBtn = document.getElementById('resetPlayback');
+  const rowMinusBtn = document.getElementById('rowMinus');
+  const rowPlusBtn = document.getElementById('rowPlus');
+  const rowCountLabel = document.getElementById('rowCountLabel');
+  const octaveLabel = document.getElementById('octaveLabel');
+  const octMinusBtn = document.getElementById('octMinus');
+  const octPlusBtn = document.getElementById('octPlus');
+  const octValueLabel = document.getElementById('octValueLabel');
+  const ivTextToggle = document.getElementById('ivTextToggle');
+  const ratioRange = document.getElementById('ratioRange');
+  const ratioLabel = document.getElementById('ratioLabel');
+  const irisRange = document.getElementById('irisRange');
+  const irisLabel = document.getElementById('irisLabel');
+  const particleRange = document.getElementById('particleRange');
+  const particleLabel = document.getElementById('particleLabel');
+  const exportOpenBtn = document.getElementById('exportOpenBtn');
+  const exportModalBackdrop = document.getElementById('exportModalBackdrop');
+  const exportAudioToggle = document.getElementById('exportAudioToggle');
+  const exportIvTextToggle = document.getElementById('exportIvTextToggle');
+  const exportStatus = document.getElementById('exportStatus');
+  const exportProgressFill = document.getElementById('exportProgressFill');
+  const exportCancelBtn = document.getElementById('exportCancelBtn');
+  const exportStartBtn = document.getElementById('exportStartBtn');
+
+  // 音・インターバルの表示時間はBPMの1拍（60000/bpm ms）から導出し、
+  // 両者の比率だけをプリセット（16:1〜1:1）で選ぶ形にする
+  const RATIO_PRESETS = [16, 8, 4, 2, 1];
+  let ratioIndex = 2; // デフォルト 4:1
+  function beatMs() { return 60000 / bpm; }
+  // 音+インターバルの合計（1拍分）を固定し、比率でその内訳を分割する
+  function noteMs() { const r = RATIO_PRESETS[ratioIndex]; return beatMs() * r / (r + 1); }
+  function leadMs() { const r = RATIO_PRESETS[ratioIndex]; return beatMs() / (r + 1); }
+  function updateRatioLabel() {
+    const r = RATIO_PRESETS[ratioIndex];
+    ratioLabel.textContent = `音:インターバル比率：${r}:1（${Math.round(noteMs())}ms / ${Math.round(leadMs())}ms）`;
+  }
+
+  let IRIS_SCALE = 1;
+  let PARTICLE_SCALE = 1;
+  const SLIDE_BASE_MS = 260;
+
+  // フレーズ入力：8ノーツ×N段（null=空）にドラッグ＆ドロップで度数を配置する
+  // 空白マスは「タイ（伸ばし）」として機能し、直前のノーツの表示時間を空白の数だけ延長する
+  const DEFAULT_PHRASE = [
+    '①', '②', '②', '③', '③', '④', '④', '⑤', '⑤', '⑥', '⑥', '⑦', '⑦',
+    '⑧', '⑧', '⑧',
+    '⑦', '⑦', '⑥', '⑥', '⑤', '⑤', '④', '④', '③', '③', '②', '②', '①', '①'
+  ];
+  const NOTES_PER_ROW = 8;
+  const MIN_ROWS = 1;
+  const MAX_ROWS = 8;
+  let numRows = 4;
+  // 各マスは null（空）または { key, oct }。oct は -1/0/+1（記号は変えずオクターブだけを別に持つ）
+  let gridSlots = DEFAULT_PHRASE.map(key => ({ key, oct: 0 }))
+    .concat(new Array(numRows * NOTES_PER_ROW - DEFAULT_PHRASE.length).fill(null));
+  let selectedIndex = null; // オクターブ変更の対象として選択中のマス
+  function computePhraseAndHolds() {
+    const keys = [];
+    const holds = [];
+    gridSlots.forEach((note) => {
+      if (note) {
+        keys.push(note);
+        holds.push(0);
+      } else if (holds.length > 0) {
+        holds[holds.length - 1]++;
+      }
+    });
+    return { keys, holds };
+  }
+  let { keys: PHRASE, holds: PHRASE_HOLDS } = computePhraseAndHolds();
+  let steps = [];
+  let index = 0;
+  const BASE_BPM = 120;
+  let bpm = 120;
+  let speedMultiplier = 1; // bpm / BASE_BPM
+  let playing = true;
+  let loopEnabled = true;
+  let phraseFinished = false; // ループOFFでフレーズ末尾まで到達した状態
+
+  let stepStartTs = 0;
+  let stepDuration = 0;
+  let remainingOnPause = null;
+  let stepTimer = null;
+  let stepTimerCallback = null; // 一時停止からの再開時に呼び直すコールバック
+  let toneTimer = null; // アイコンのフェードイン完了に合わせて音を遅らせるためのタイマー
+
+  let currentPanel = null;
+  let pending = null;      // { outgoing, incoming }
+  let pendingTimer = null;
+
+  let audioCtx = null;
+  let audioEnabled = false;
+  function ensureAudioContext() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function playTone(semitone, durationSec) {
+    if (!audioEnabled || !audioCtx) return;
+    const freq = 261.63 * Math.pow(2, semitone / 12);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const now = audioCtx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + durationSec + 0.05);
+  }
+
+  // ============================================================
+  // 表示：スライド演出（タイミング制御とは独立して動く）
+  // ============================================================
+  function finalizeSlide() {
+    if (!pending) return;
+    const { outgoing, incoming } = pending;
+    pending = null;
+    clearTimeout(pendingTimer);
+    trackEl.removeEventListener('transitionend', finalizeSlide);
+    if (outgoing && outgoing.parentNode) outgoing.remove();
+    incoming.style.top = '0';
+    incoming.style.left = '0';
+    incoming.style.transition = '';
+    incoming.style.opacity = '';
+    incoming.classList.remove('panel-h');
+    trackEl.style.transition = 'none';
+    trackEl.style.transform = 'translateY(0)';
+    void trackEl.offsetWidth;
+    currentPanel = incoming;
+  }
+
+  function slideTo(step, up, slideMs, stepMs, isUnison, timing) {
+    finalizeSlide(); // 前の遷移が残っていれば先に確定させる
+    // 図形アイコンの登場アニメーションはパネルのスライドとは分離して付与する（ユニゾンは対象外）
+    const iconDir = isUnison ? null : (up ? 'up' : 'down');
+    const incoming = panelEl(step, stepMs, iconDir, timing);
+    trackEl.style.transition = 'none';
+
+    if (isUnison && (step.type !== 'blank' || step.blackout)) {
+      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、暗転へ溶けるようにクロスフェードする（ブラックアウト）
+      incoming.style.top = '0';
+      incoming.style.left = '0';
+      incoming.style.opacity = '0';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateY(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      const fadeCss = `opacity ${slideMs}ms ease-out`;
+      incoming.style.transition = fadeCss;
+      incoming.style.opacity = '1';
+      // 暗転（不透明）へ入る時は下のパネルをそのまま残し、暗転から戻る時だけ暗転を溶かして背景を透かす
+      if (currentPanel && step.type !== 'interval') {
+        currentPanel.style.transition = fadeCss;
+        currentPanel.style.opacity = '0';
+      }
+    } else if (isUnison) {
+      // リピート復帰の黒画面（ブランク）は従来どおり左右にスライドする
+      incoming.classList.add('panel-h');
+      incoming.style.top = '0';
+      incoming.style.left = '100%';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateX(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      trackEl.style.transition = `transform ${slideMs}ms cubic-bezier(.4,0,.2,1)`;
+      trackEl.style.transform = 'translateX(-100%)';
+    } else {
+      // 上昇：次のパネルは上（-100%）から下りてくる／下降：下（+100%）から上がってくる
+      incoming.style.top = up ? '-100%' : '100%';
+      trackEl.appendChild(incoming);
+      trackEl.style.transform = 'translateY(0)';
+      void trackEl.offsetWidth;
+
+      pending = { outgoing: currentPanel, incoming };
+      trackEl.style.transition = `transform ${slideMs}ms cubic-bezier(.4,0,.2,1)`;
+      trackEl.style.transform = `translateY(${up ? '100%' : '-100%'})`;
+    }
+
+    trackEl.addEventListener('transitionend', finalizeSlide);
+    pendingTimer = setTimeout(finalizeSlide, slideMs + 80);
+  }
+
+  // ============================================================
+  // 進行バー
+  // ============================================================
+  // 1マス=1拍ごとに、発音の瞬間に左端から伸び始め、次の拍の頭で右端に届く。
+  // タイ（空白）が続くノーツでも、拍ごとにバーが左端へ戻る。
+  // 区間 b = { onset: 発音時刻(performance.now基準), cycles: [各拍の長さ(ms) ...] }
+  let barCur = null;
+  let barNext = null;      // 発音の瞬間まで、直前の区間を右端まで伸ばし切るために待たせておく区間
+  let barPausedAt = null;
+  function barPct(b, now) {
+    const e = now - b.onset;
+    if (e < 0) return 0;
+    let acc = 0;
+    for (const len of b.cycles) {
+      if (e < acc + len) return ((e - acc) / len) * 100;
+      acc += len;
+    }
+    return 100;
+  }
+  function tickProgressBar() {
+    requestAnimationFrame(tickProgressBar);
+    if (!playing) return;
+    const now = performance.now();
+    if (barNext && now >= barNext.onset) { barCur = barNext; barNext = null; }
+    progressFill.style.width = (barCur ? barPct(barCur, now) : 0).toFixed(2) + '%';
+  }
+  function resetProgressBar() {
+    barCur = null;
+    barNext = null;
+    progressFill.style.width = '0%';
+  }
+
+  // ============================================================
+  // タイミング制御（各ステップは自分自身の持ち時間だけを使う）
+  // ============================================================
+  function durationOf(i) {
+    const s = steps[i];
+    // タイ（空白）は1マス=ちょうど1拍ずつ伸ばす（ノーツ＋インターバル＝1拍を守るため、伸ばす分は拍単位）
+    return s.type === 'note' ? noteMs() + (s.hold || 0) * beatMs() : leadMs();
+  }
+
+  // フレーズの1音目も、2音目以降と同じだけ発音をステップ頭から遅らせる。
+  // 遅らせないと「1音目→2音目」の発音間隔だけ遅延分（約0.24秒）長くなり、1音目が長く聞こえる
+  function firstToneDelay() {
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
+    return noteTiming(slideMs, noteMs()).toneDelay;
+  }
+
+  function beginStep(withTone, toneDelayMs) {
+    clearTimeout(stepTimer);
+    clearTimeout(toneTimer);
+    stepDuration = durationOf(index);
+    stepStartTs = performance.now();
+    remainingOnPause = null;
+
+    const s = steps[index];
+    const delay = s.type === 'note' ? Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6)) : 0;
+    if (withTone !== false && s.type === 'note') {
+      if (delay > 0) {
+        toneTimer = setTimeout(() => playTone(noteSemitone(s), (stepDuration / 1000) * 0.92), delay);
+      } else {
+        playTone(noteSemitone(s), (stepDuration / 1000) * 0.92);
+      }
+    }
+    if (s.type === 'note') {
+      // 進行バーは1マス=1拍。発音の瞬間に左端から伸び始め、タイが続けば拍ごとに左端へ戻る。
+      // 発音は画面の切り替わりより遅れるので、直前の区間を右端まで伸ばし切ってから切り替える
+      const cells = 1 + (s.hold || 0);
+      const cycles = new Array(cells).fill(beatMs());
+      const nextIdx = (index + 1) % steps.length;
+      // ループOFFの最後のノーツは、再生が止まる瞬間に右端へ届くようにする
+      if (nextIdx === 0 && !loopEnabled) cycles[cells - 1] = Math.max(1, noteMs() - delay);
+      const nb = { onset: stepStartTs + delay, cycles };
+      if (delay > 0 && barCur) {
+        barNext = nb;
+      } else {
+        barCur = nb;
+        barNext = null;
+      }
+    }
+    // インターバル中は何もしない：発音時に張った区間をそのまま継続させる
+
+    if (playing) {
+      stepTimerCallback = onStepEnd;
+      stepTimer = setTimeout(stepTimerCallback, stepDuration);
+    }
+  }
+
+  function onStepEnd() {
+    const nextIndex = (index + 1) % steps.length;
+
+    if (nextIndex === 0) {
+      if (!loopEnabled) {
+        // ループOFF：最後のノーツを鳴らし終えたところで再生を止める
+        clearTimeout(stepTimer);
+        clearTimeout(toneTimer);
+        playing = false;
+        phraseFinished = true;
+        playPauseBtn.textContent = '▶';
+        progressFill.style.width = '100%';
+        return;
+      }
+      // フレーズの先頭に戻る（リピート）：最後の音の後は、他のノーツと同じ「インターバル」分の長さだけ
+      // 黒画面（または同音ならブラックアウト）を挟む。最後のノーツも他と同じ1拍（ノート＋インターバル）にして
+      // 最後→先頭の発音間隔を揃える
+      const blankDur = leadMs();
+      const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
+      // 最後のノーツと最初のノーツが同音（①→①など）なら音が移動していないので、
+      // 横スライドではなくブラックアウトにする。同音でないリピートは従来どおり
+      const lastStep = steps[index];
+      const sameAsFirst = lastStep.type === 'note' && noteSemitone(lastStep) === noteSemitone(steps[0]);
+      slideTo({ type: 'blank', blackout: sameAsFirst }, true, blankSlideMs, blankDur, true);
+      bottomHideable.classList.remove('hidden');
+      // 進行バーはリセットせず、直前のノーツ開始時に張ったバーをそのまま継続させる
+      stepDuration = blankDur;
+      stepStartTs = performance.now();
+      remainingOnPause = null;
+      clearTimeout(stepTimer);
+      clearTimeout(toneTimer);
+      stepTimerCallback = () => {
+        resetStage(0);
+        // 他の遷移と同じ「アイコンのフェードイン完了に音を合わせる」遅延を、リピート復帰時にも適用する
+        beginStep(true, firstToneDelay());
+      };
+      stepTimer = setTimeout(stepTimerCallback, blankDur);
+      return;
+    }
+
+    const up = directionAt(steps, index);
+    const ivStep = intervalAt(steps, index);
+    const isUnison = !!ivStep && ivStep.iv.st === 0; // 半音距離0＝音高が変わらない
+
+    // スライド時間はそのステップの持ち時間を超えないよう抑える
+    const nextDur = steps[nextIndex].type === 'note' ? noteMs() : leadMs();
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
+    // 発音の瞬間にアイコン表示が完了するよう、発音タイミングとアイコンの開始を揃えて決める
+    // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ発音遅延を適用する
+    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, noteMs()) : null;
+
+    slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison, timing);
+    index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
+    beginStep(true, timing ? timing.toneDelay : 0);
+  }
+
+  function resetStage(startIndex) {
+    clearTimeout(stepTimer);
+    clearTimeout(toneTimer);
+    finalizeSlide();
+    steps = buildSteps(PHRASE, PHRASE_HOLDS);
+    index = startIndex || 0;
+    trackEl.innerHTML = '';
+    trackEl.style.transition = 'none';
+    trackEl.style.transform = 'translateY(0)';
+    // 最初に出るノーツにも、2音目以降と同じアイコンのフェードイン（発音の瞬間に完了）を付ける
+    const first = steps[index];
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
+    const timing = first.type === 'note' ? noteTiming(slideMs, noteMs()) : null;
+    currentPanel = panelEl(first, durationOf(index), timing ? 'up' : null, timing);
+    currentPanel.style.top = '0';
+    trackEl.appendChild(currentPanel);
+    phraseChip.textContent = 'PHRASE — ' + PHRASE.map(n => n.key + octLabel(n.oct)).join(' ');
+  }
+
+  // ============================================================
+  // イベント
+  // ============================================================
+  playPauseBtn.addEventListener('click', () => {
+    if (!playing && phraseFinished) {
+      // ループOFFで末尾まで再生し終えた状態から再度再生：先頭からやり直す
+      phraseFinished = false;
+      playing = true;
+      playPauseBtn.textContent = '❚❚';
+      resetProgressBar();
+      resetStage(0);
+      beginStep(true, firstToneDelay());
+      return;
+    }
+    playing = !playing;
+    playPauseBtn.textContent = playing ? '❚❚' : '▶';
+    if (playing) {
+      const remaining = remainingOnPause != null ? remainingOnPause : stepDuration;
+      stepTimer = setTimeout(stepTimerCallback, remaining);
+      stepStartTs = performance.now() - (stepDuration - remaining);
+      // 止まっていた分だけバーの区間を後ろへずらして、止めた位置から再開する
+      if (barPausedAt != null) {
+        const dt = performance.now() - barPausedAt;
+        if (barCur) barCur.onset += dt;
+        if (barNext) barNext.onset += dt;
+        barPausedAt = null;
+      }
+      remainingOnPause = null;
+    } else {
+      clearTimeout(stepTimer);
+      clearTimeout(toneTimer);
+      remainingOnPause = Math.max(stepDuration - (performance.now() - stepStartTs), 0);
+      barPausedAt = performance.now();
+    }
+  });
+
+  loopToggleBtn.addEventListener('click', () => {
+    loopEnabled = !loopEnabled;
+    loopToggleBtn.classList.toggle('loop-on', loopEnabled);
+    loopToggleBtn.classList.toggle('loop-off', !loopEnabled);
+    loopToggleBtn.title = loopEnabled ? 'ループ再生 ON' : 'ループ再生 OFF';
+  });
+
+  function setBpm(rawValue, { syncRange = true, syncInput = true } = {}) {
+    let value = Number(rawValue);
+    if (!Number.isFinite(value)) value = bpm;
+    const clamped = Math.min(240, Math.max(60, Math.round(value)));
+    bpm = clamped;
+    speedMultiplier = bpm / BASE_BPM;
+    if (syncRange) bpmRange.value = clamped;
+    if (syncInput) bpmInput.value = clamped;
+    updateRatioLabel(); // 音・インターバルの表示msはBPMから導出されるので表示を更新
+    if (playing) beginStep(false); // 現在のステップを新しいテンポで測り直す
+  }
+
+  bpmRange.addEventListener('input', () => {
+    setBpm(bpmRange.value, { syncRange: false });
+  });
+  bpmInput.addEventListener('change', () => {
+    setBpm(bpmInput.value); // 確定時にレンジ外の値は補正して表示にも反映する
+  });
+
+  audioToggle.addEventListener('click', () => {
+    ensureAudioContext();
+    audioEnabled = !audioEnabled;
+    audioToggle.textContent = audioEnabled ? '🔊' : '🔇';
+    audioToggle.title = audioEnabled ? '音をOFF' : '音をON';
+  });
+  audioToggle.textContent = '🔇';
+  audioToggle.title = '音をON';
+
+  resetPlaybackBtn.addEventListener('click', () => {
+    playing = true;
+    phraseFinished = false;
+    playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
+    resetStage(0);
+    beginStep(true, firstToneDelay());
+  });
+
+  ivTextToggle.addEventListener('change', () => {
+    frameEl.classList.toggle('hide-iv-text', !ivTextToggle.checked);
+  });
+
+  // ============================================================
+  // フレーズ入力：パレットからのドラッグ＆ドロップで32グリッドに配置（空白は直前のノーツのタイとして表示）
+  // ============================================================
+  function renderPhraseUI() {
+    phrasePalette.innerHTML = DEGREES.map(d =>
+      `<div class="phrase-chip" draggable="true" data-source="palette" data-key="${d.key}">${d.key}</div>`
+    ).join('');
+    const chipHTML = (note) => note.key + (note.oct ? `<span class="oct-mark">${octLabel(note.oct)}</span>` : '');
+    let lastNote = null;
+    phraseGrid.innerHTML = gridSlots.map((note, i) => {
+      if (note) {
+        lastNote = note;
+        const sel = i === selectedIndex ? ' selected' : '';
+        return `
+          <div class="phrase-slot filled${sel}" data-index="${i}">
+            <div class="phrase-chip" draggable="true" data-source="grid" data-index="${i}" data-key="${note.key}">${chipHTML(note)}</div>
+          </div>
+        `;
+      }
+      if (lastNote) {
+        // 空白マス：直前のノーツの記号をタイ（伸ばし）の見た目として残す
+        return `
+          <div class="phrase-slot tied" data-index="${i}">
+            <div class="phrase-chip phrase-chip-tied">${chipHTML(lastNote)}</div>
+          </div>
+        `;
+      }
+      return `<div class="phrase-slot" data-index="${i}"></div>`;
+    }).join('');
+    updateOctaveControls();
+  }
+
+  function updateOctaveControls() {
+    const note = selectedIndex != null ? gridSlots[selectedIndex] : null;
+    if (!note) {
+      octaveLabel.textContent = 'ノーツを選択すると、オクターブを変更できます';
+      octValueLabel.textContent = '';
+      octMinusBtn.disabled = true;
+      octPlusBtn.disabled = true;
+      return;
+    }
+    octaveLabel.textContent = `選択中：${note.key}（${selectedIndex + 1}番目）`;
+    octValueLabel.textContent = note.oct ? octLabel(note.oct) : '±0';
+    octMinusBtn.disabled = (note.oct || 0) <= MIN_OCT;
+    octPlusBtn.disabled = (note.oct || 0) >= MAX_OCT;
+  }
+
+  function shiftSelectedOctave(delta) {
+    const note = selectedIndex != null ? gridSlots[selectedIndex] : null;
+    if (!note) return;
+    const next = Math.max(MIN_OCT, Math.min(MAX_OCT, (note.oct || 0) + delta));
+    if (next === (note.oct || 0)) return;
+    gridSlots[selectedIndex] = { key: note.key, oct: next };
+    renderPhraseUI();
+    applyGridPhrase();
+  }
+
+  function applyGridPhrase() {
+    const { keys, holds } = computePhraseAndHolds();
+    if (keys.length < 2) return;
+    PHRASE = keys;
+    PHRASE_HOLDS = holds;
+    playing = true;
+    phraseFinished = false;
+    playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
+    resetStage(0);
+    beginStep(true, firstToneDelay());
+  }
+
+  function updateRowControls() {
+    rowCountLabel.textContent = numRows + '行';
+    rowMinusBtn.disabled = numRows <= MIN_ROWS;
+    rowPlusBtn.disabled = numRows >= MAX_ROWS;
+  }
+
+  function setNumRows(n) {
+    const clamped = Math.max(MIN_ROWS, Math.min(MAX_ROWS, n));
+    if (clamped === numRows) return;
+    const newSize = clamped * NOTES_PER_ROW;
+    gridSlots = newSize > gridSlots.length
+      ? gridSlots.concat(new Array(newSize - gridSlots.length).fill(null))
+      : gridSlots.slice(0, newSize);
+    numRows = clamped;
+    if (selectedIndex != null && selectedIndex >= newSize) selectedIndex = null;
+    updateRowControls();
+    renderPhraseUI();
+    applyGridPhrase();
+  }
+
+  rowMinusBtn.addEventListener('click', () => setNumRows(numRows - 1));
+  rowPlusBtn.addEventListener('click', () => setNumRows(numRows + 1));
+
+  let phraseDragSource = null; // { from: 'palette'|'grid', index?, key }
+
+  phrasePalette.addEventListener('dragstart', (e) => {
+    const chip = e.target.closest('.phrase-chip');
+    if (!chip) return;
+    phraseDragSource = { from: 'palette', key: chip.dataset.key };
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', chip.dataset.key);
+  });
+
+  phraseGrid.addEventListener('dragstart', (e) => {
+    const chip = e.target.closest('.phrase-chip');
+    if (!chip) return;
+    phraseDragSource = { from: 'grid', index: Number(chip.dataset.index), key: chip.dataset.key };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', chip.dataset.key);
+    chip.classList.add('dragging');
+  });
+
+  phraseGrid.addEventListener('dragover', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (!slot || !phraseDragSource) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = phraseDragSource.from === 'palette' ? 'copy' : 'move';
+    slot.classList.add('drag-over');
+  });
+  phraseGrid.addEventListener('dragleave', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (slot) slot.classList.remove('drag-over');
+  });
+  phraseGrid.addEventListener('drop', (e) => {
+    const slot = e.target.closest('.phrase-slot');
+    if (!slot || !phraseDragSource) return;
+    e.preventDefault();
+    const targetIndex = Number(slot.dataset.index);
+    if (phraseDragSource.from === 'palette') {
+      gridSlots[targetIndex] = { key: phraseDragSource.key, oct: 0 };
+    } else {
+      const srcIndex = phraseDragSource.index;
+      if (srcIndex !== targetIndex) {
+        // 左右の入れ替え（オクターブも一緒に移動する）
+        const tmp = gridSlots[targetIndex];
+        gridSlots[targetIndex] = gridSlots[srcIndex];
+        gridSlots[srcIndex] = tmp;
+      }
+    }
+    selectedIndex = targetIndex; // 置いた直後にそのままオクターブを調整できるようにする
+    phraseDragSource = null;
+    renderPhraseUI();
+    applyGridPhrase();
+  });
+
+  document.addEventListener('dragend', (e) => {
+    // グリッドの外（有効なドロップ先以外）に離した場合はそのマスを削除する
+    if (phraseDragSource && phraseDragSource.from === 'grid' && e.dataTransfer.dropEffect === 'none') {
+      gridSlots[phraseDragSource.index] = null;
+      if (selectedIndex === phraseDragSource.index) selectedIndex = null;
+      renderPhraseUI();
+      applyGridPhrase();
+    }
+    phraseDragSource = null;
+  });
+
+  // マスのクリックで選択（もう一度クリックで解除）。選択中のノーツのオクターブを＋/－で変更する
+  phraseGrid.addEventListener('click', (e) => {
+    const chip = e.target.closest('.phrase-chip[data-source="grid"]');
+    if (!chip) return;
+    const idx = Number(chip.dataset.index);
+    selectedIndex = selectedIndex === idx ? null : idx;
+    renderPhraseUI();
+  });
+  octMinusBtn.addEventListener('click', () => shiftSelectedOctave(-1));
+  octPlusBtn.addEventListener('click', () => shiftSelectedOctave(1));
+
+  renderPhraseUI();
+  updateRowControls();
+
+  ratioRange.addEventListener('input', () => {
+    ratioIndex = Number(ratioRange.value);
+    updateRatioLabel();
+    if (playing) beginStep(false); // 現在のステップを新しい比率で測り直す
+  });
+  updateRatioLabel();
+
+  irisRange.addEventListener('input', () => {
+    IRIS_SCALE = Number(irisRange.value) / 100;
+    irisLabel.textContent = `虹彩アニメーションの強さ：${irisRange.value}%`;
+    // 表示中のインターバルパネルに即座に反映
+    const s = steps[index];
+    if (currentPanel && s && s.type === 'interval') {
+      const p = Math.pow(s.iv.st / 12, 0.85);
+      currentPanel.style.setProperty('--iris-strength', ((0.22 + p * 1.18) * IRIS_SCALE).toFixed(3));
+      currentPanel.style.setProperty('--spec-strength', ((0.06 + p * 0.84) * IRIS_SCALE).toFixed(3));
+    }
+  });
+
+  particleRange.addEventListener('input', () => {
+    PARTICLE_SCALE = Number(particleRange.value) / 100;
+    particleLabel.textContent = `線状の光の強さ：${particleRange.value}%`;
+    // 表示中のパネルには濃度で即時反映（粒子数は次のインターバルから反映される）
+    const layer = currentPanel && currentPanel.querySelector('.iv-particles');
+    if (layer) layer.style.setProperty('--particle-opacity', Math.min(PARTICLE_SCALE, 1).toFixed(2));
+  });
+
+  // ============================================================
+  // 動画書き出し（DOM/CSSの見た目をCanvasに再描画してMediaRecorderで録画）
+  // ============================================================
+  const EXPORT_W = 1080, EXPORT_H = 1920;
+  const EXPORT_SCALE = EXPORT_W / 390;
+
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+  function cubicBezier(x1, y1, x2, y2) {
+    function bezVal(t, a, b) { const c = 3 * a, d = 3 * (b - a) - c, e = 1 - c - d; return ((e * t + d) * t + c) * t; }
+    return function (x) {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      let lo = 0, hi = 1, t = x;
+      for (let i = 0; i < 20; i++) {
+        const cx = bezVal(t, x1, x2);
+        if (Math.abs(cx - x) < 1e-4) break;
+        if (cx < x) lo = t; else hi = t;
+        t = (lo + hi) / 2;
+      }
+      return bezVal(t, y1, y2);
+    };
+  }
+  const easeSlide = cubicBezier(0.4, 0, 0.2, 1);
+  const easeIcon = cubicBezier(0.22, 0.9, 0.32, 1);
+  const easePart = cubicBezier(0.42, 0.03, 0.55, 0.98);
+  const easeIris = cubicBezier(0.3, 0, 0.25, 1);
+  const easeFade = cubicBezier(0, 0, 0.58, 1); // CSSの ease-out
+  let exportFadeLayer = null;
+  function getExportFadeLayer() {
+    if (!exportFadeLayer) {
+      exportFadeLayer = document.createElement('canvas');
+      exportFadeLayer.width = EXPORT_W; exportFadeLayer.height = EXPORT_H;
+    }
+    return exportFadeLayer;
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function wrapTextJa(ctx, text, x, y, maxWidth, lineHeight) {
+    let line = '';
+    let cy = y;
+    for (const ch of text) {
+      const test = line + ch;
+      if (line && ctx.measureText(test).width > maxWidth) {
+        ctx.fillText(line, x, cy);
+        line = ch;
+        cy += lineHeight;
+      } else {
+        line = test;
+      }
+    }
+    if (line) ctx.fillText(line, x, cy);
+    return cy;
+  }
+
+  function angleGradient(ctx, angleDeg, w, h, stops) {
+    const rad = angleDeg * Math.PI / 180;
+    const dx = Math.sin(rad), dy = -Math.cos(rad);
+    const cx = w / 2, cy = h / 2;
+    const len = Math.abs(dx) * w / 2 + Math.abs(dy) * h / 2;
+    const grad = ctx.createLinearGradient(cx - dx * len, cy - dy * len, cx + dx * len, cy + dy * len);
+    stops.forEach(([offset, color]) => grad.addColorStop(offset, color));
+    return grad;
+  }
+
+  function drawGlyph(ctx, shape, filled, color, cx, cy, size, opacity, translateYpx) {
+    if (opacity <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(cx - size / 2, cy - size / 2 + translateYpx);
+    ctx.scale(size / 100, size / 100);
+    ctx.lineWidth = 7;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    const p = new Path2D(GLYPH_PATHS[shape] || '');
+    if (filled) ctx.fill(p);
+    ctx.stroke(p);
+    ctx.restore();
+  }
+
+  // ----- 書き出し用タイムライン：現在のPHRASE/PHRASE_HOLDSから1回分の再生を事前計算する -----
+  function computeExportTimeline() {
+    const timelineSteps = buildSteps(PHRASE, PHRASE_HOLDS);
+    const segs = [];
+    let t = 0;
+    for (let i = 0; i < timelineSteps.length; i++) {
+      const step = timelineSteps[i];
+      const durMs = step.type === 'note' ? noteMs() + (step.hold || 0) * beatMs() : leadMs();
+      let slideMs = 0, up = true, isUnison = false;
+      let toneDelay = 0, iconDelay = 0, iconDur = 0;
+      if (i > 0) {
+        up = directionAt(timelineSteps, i - 1);
+        const ivStep = intervalAt(timelineSteps, i - 1);
+        isUnison = !!ivStep && ivStep.iv.st === 0;
+        // 画面側と同じ式：スライド時間はタイ（hold）を含まない基本の長さを基準にする
+        const baseDur = step.type === 'note' ? noteMs() : leadMs();
+        slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, baseDur * 0.7);
+        if (step.type === 'note') {
+          const nt = noteTiming(slideMs, noteMs());
+          toneDelay = nt.toneDelay; iconDelay = nt.iconDelay; iconDur = nt.iconDur;
+        }
+      } else if (step.type === 'note') {
+        // 1音目：登場アニメーションは無いが、発音は2音目以降と同じ遅延に揃える（画面側 firstToneDelay と同じ式）
+        const nt0 = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), noteMs());
+        toneDelay = nt0.toneDelay; iconDelay = nt0.iconDelay; iconDur = nt0.iconDur;
+      }
+      const hasIconAnim = step.type === 'note' && !isUnison;
+      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, toneDelay, iconDelay, iconDur, index: i });
+      t += durMs;
+    }
+    return { segs, totalMs: t };
+  }
+
+  function findSegment(segs, elapsedMs) {
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (elapsedMs >= segs[i].startMs) return segs[i];
+    }
+    return segs[0];
+  }
+
+  function computeBars(segs) {
+    const bars = [];
+    for (let i = 0; i < segs.length; i++) {
+      if (segs[i].step.type !== 'note') continue;
+      // 1マス=1拍。発音の瞬間に左端から伸び始め、タイが続けば拍ごとに左端へ戻る（最後は書き出しの終わりで右端）
+      const onset = segs[i].startMs + segs[i].toneDelay;
+      const cells = 1 + (segs[i].step.hold || 0);
+      const cycles = new Array(cells).fill(beatMs());
+      if (!segs[i + 1]) cycles[cells - 1] = Math.max(1, noteMs() - segs[i].toneDelay);
+      bars.push({ start: onset, cycles });
+    }
+    return bars;
+  }
+
+  // ----- 線状の光（パーティクル） -----
+  const exportParticleCache = new Map();
+  function getExportParticles(seg) {
+    if (exportParticleCache.has(seg.index)) return exportParticleCache.get(seg.index);
+    const step = seg.step;
+    const iv = step.type === 'interval' ? step.iv : { st: 12 };
+    const dir = step.type === 'blank' ? 'side' : (iv.st === 0 ? 'side' : (seg.up ? 'up' : 'down'));
+    const p = dir === 'side' ? 1 : Math.pow(iv.st / 12, 0.85);
+    const count = Math.round((34 + p * 86) * PARTICLE_SCALE);
+    const travelBase = (160 + p * 460) * EXPORT_SCALE;
+    const lenBase = (45 + p * 190) * EXPORT_SCALE;
+    const palette = [
+      ['rgba(255,255,255,0.95)', 'rgba(200,215,255,0.6)'],
+      ['rgba(226,232,255,0.92)', 'rgba(170,190,255,0.6)'],
+      ['rgba(190,200,255,0.90)', 'rgba(140,160,255,0.6)'],
+      ['rgba(160,170,255,0.88)', 'rgba(120,130,255,0.6)'],
+      ['rgba(140,150,250,0.85)', 'rgba(110,120,255,0.55)'],
+    ];
+    const horizontal = dir === 'side';
+    const durationMs = seg.durMs;
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      const r = (n) => Math.random() * n;
+      const len = lenBase * (0.3 + r(1.3));
+      const thin = (0.9 + r(1.1)) * EXPORT_SCALE;
+      const travel = travelBase * (0.7 + r(0.6));
+      const delay = Math.round(r(durationMs * 0.3));
+      const dur = Math.max(1, Math.round(durationMs * (0.6 + r(0.45))));
+      const op = 0.32 + r(0.62);
+      const [color] = palette[Math.floor(r(palette.length))];
+      const left = (horizontal ? -30 + r(160) : -4 + r(108)) / 100;
+      const top = (horizontal ? -4 + r(108) : -30 + r(160)) / 100;
+      list.push({ len, thin, travel, delay, dur, op, color, left, top });
+    }
+    const result = { horizontal, list };
+    exportParticleCache.set(seg.index, result);
+    return result;
+  }
+
+  function drawExportParticles(ctx, seg, localMs, w, h, alphaScale) {
+    const { list, horizontal } = getExportParticles(seg);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const pt of list) {
+      const t = (localMs - pt.delay) / pt.dur;
+      if (t < 0 || t > 1) continue;
+      const e = easePart(t);
+      let opacity;
+      if (t < 0.18) opacity = pt.op * (t / 0.18);
+      else if (t < 0.72) opacity = pt.op;
+      else opacity = pt.op * (1 - (t - 0.72) / 0.28);
+      opacity *= alphaScale;
+      if (opacity <= 0.01) continue;
+      const travelPos = pt.travel - e * (pt.travel * 2);
+      const scale = 0.85 + e * 0.4;
+      const lenScaled = pt.len * scale;
+      const cx = horizontal ? pt.left * w + travelPos : pt.left * w;
+      const cy = horizontal ? pt.top * h : pt.top * h + travelPos;
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.translate(cx, cy);
+      const grad = horizontal
+        ? ctx.createLinearGradient(-lenScaled / 2, 0, lenScaled / 2, 0)
+        : ctx.createLinearGradient(0, -lenScaled / 2, 0, lenScaled / 2);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.12, pt.color);
+      grad.addColorStop(0.88, pt.color);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      if (horizontal) ctx.fillRect(-lenScaled / 2, -pt.thin / 2, lenScaled, pt.thin);
+      else ctx.fillRect(-pt.thin / 2, -lenScaled / 2, pt.thin, lenScaled);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ----- スターフィールド背景（宇宙背景） -----
+  let exportStarfield = null;
+  function ensureExportStarfield() {
+    if (exportStarfield) return exportStarfield;
+    const stars = [];
+    for (let i = 0; i < 90; i++) {
+      stars.push({
+        left: Math.random(), top: Math.random(),
+        size: (0.6 + Math.random() * 1.8) * EXPORT_SCALE,
+        op: 0.25 + Math.random() * 0.65,
+        twinkle: Math.random() < 0.4,
+        dur: 2400 + Math.random() * 3000,
+        delay: Math.random() * 4000,
+      });
+    }
+    exportStarfield = { stars };
+    return exportStarfield;
+  }
+
+  function drawExportStarfieldBg(ctx, w, h, elapsedMs, bleed) {
+    const m = bleed || 0;
+    const bg = ctx.createRadialGradient(w * 0.28, h * 0.18, 0, w * 0.28, h * 0.18, Math.max(w, h) * 0.9);
+    bg.addColorStop(0, '#10163a'); bg.addColorStop(0.45, '#070914'); bg.addColorStop(1, '#020207');
+    ctx.fillStyle = bg; ctx.fillRect(-m, -m, w + m * 2, h + m * 2);
+
+    const nebulae = [
+      { x: 0.14, y: 0.12, size: 220, color: 'rgba(90,110,255,0.9)' },
+      { x: 0.78, y: 0.30, size: 180, color: 'rgba(160,90,255,0.8)' },
+      { x: 0.40, y: 0.78, size: 240, color: 'rgba(60,150,255,0.7)' },
+    ];
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.32;
+    try { ctx.filter = `blur(${Math.round(48 * EXPORT_SCALE)}px)`; } catch (e) {}
+    for (const n of nebulae) {
+      const r = n.size * EXPORT_SCALE / 2;
+      const g = ctx.createRadialGradient(n.x * w, n.y * h, 0, n.x * w, n.y * h, r);
+      g.addColorStop(0, n.color);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(n.x * w, n.y * h, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.filter = 'none';
+    ctx.restore();
+
+    const { stars } = ensureExportStarfield();
+    ctx.save();
+    for (const s of stars) {
+      let op = s.op;
+      if (s.twinkle) {
+        const phase = (((elapsedMs - s.delay) % s.dur) + s.dur) % s.dur / s.dur;
+        const wave = (1 + Math.cos(phase * Math.PI * 2)) / 2;
+        op = s.op * (0.2 + 0.8 * wave);
+      }
+      ctx.globalAlpha = op;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(s.left * w, s.top * h, s.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 画面上の「すりガラス」（backdrop-filter: blur(22px) saturate(1.35)）と同じ見た目になるよう、
+  // 星空を一度だけぼかして保持する。星は輪郭が溶けて粒状ノイズに見えないようにする
+  let exportGlassCanvas = null;
+  function getExportGlassCanvas(w, h) {
+    if (exportGlassCanvas) return exportGlassCanvas;
+    const blurPx = Math.round(22 * EXPORT_SCALE);
+    const m = blurPx * 3;
+    const src = document.createElement('canvas');
+    src.width = w + m * 2; src.height = h + m * 2;
+    const sctx = src.getContext('2d');
+    sctx.translate(m, m);
+    drawExportStarfieldBg(sctx, w, h, 0, m);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const octx = out.getContext('2d');
+    octx.filter = `blur(${blurPx}px) saturate(1.35)`;
+    octx.drawImage(src, -m, -m);
+    octx.filter = 'none';
+    exportGlassCanvas = out;
+    return out;
+  }
+
+  function drawGlassBg(ctx, w, h) {
+    ctx.drawImage(getExportGlassCanvas(w, h), 0, 0);
+    ctx.fillStyle = angleGradient(ctx, 165, w, h, [[0, 'rgba(214,228,255,0.22)'], [1, 'rgba(190,206,255,0.07)']]);
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  // ----- パネル描画（note / interval / blank） -----
+  function drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    drawGlassBg(ctx, w, h, elapsedMs);
+    const d = DEG[seg.step.key];
+    let iconOpacity = 1, iconTranslateY = 0;
+    if (seg.hasIconAnim) {
+      const raw = clamp01((localMs - seg.iconDelay) / seg.iconDur);
+      const e = easeIcon(raw);
+      iconOpacity = e;
+      const dirSign = seg.up ? 1 : -1;
+      iconTranslateY = (1 - e) * 40 * dirSign * EXPORT_SCALE;
+    }
+    const iconSize = GLYPH_SIZE * EXPORT_SCALE;
+    const iconCenterY = h * 0.44;
+    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, iconOpacity, iconTranslateY);
+    if (showText) {
+      ctx.save();
+      ctx.fillStyle = '#F3F6FF';
+      ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE;
+      const oct = octLabel(seg.step.oct);
+      if (!oct) {
+        ctx.textAlign = 'center';
+        ctx.fillText(seg.step.key, w / 2, labelY);
+      } else {
+        // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
+        const keyW = ctx.measureText(seg.step.key).width;
+        const gap = 8 * EXPORT_SCALE;
+        const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
+        ctx.font = badgeFont;
+        const badgeW = ctx.measureText(oct).width;
+        const startX = w / 2 - (keyW + gap + badgeW) / 2;
+        ctx.textAlign = 'left';
+        ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+        ctx.fillText(seg.step.key, startX, labelY);
+        ctx.font = badgeFont;
+        ctx.globalAlpha = 0.8;
+        ctx.fillText(oct, startX + keyW + gap, labelY);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawIntervalPanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    const iv = seg.step.iv;
+    const grad = ctx.createRadialGradient(w * 0.3, h * 0.22, 0, w * 0.3, h * 0.22, Math.max(w, h) * 0.9);
+    iv.grad.forEach((c, i) => grad.addColorStop(i / (iv.grad.length - 1), c));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 同音は音が移動していないので、虹彩の流れは出さず静かな暗転にする
+    const t = clamp01(localMs / seg.durMs);
+    const eIris = easeIris(t);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = iv.st === 0 ? 0 : 0.5 * IRIS_SCALE;
+    const travel = h * 1.3;
+    const irisY = seg.up ? (1 - eIris * 2) * travel : (eIris * 2 - 1) * travel;
+    const irisGrad = ctx.createLinearGradient(0, irisY - h * 0.5, 0, irisY + h * 0.5);
+    irisGrad.addColorStop(0, 'transparent');
+    irisGrad.addColorStop(0.14, 'rgba(255,60,170,0.4)');
+    irisGrad.addColorStop(0.3, 'rgba(255,170,40,0.45)');
+    irisGrad.addColorStop(0.46, 'rgba(120,255,200,0.45)');
+    irisGrad.addColorStop(0.62, 'rgba(80,170,255,0.45)');
+    irisGrad.addColorStop(0.78, 'rgba(190,110,255,0.4)');
+    irisGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = irisGrad;
+    ctx.fillRect(-w * 0.25, 0, w * 1.5, h);
+    ctx.restore();
+
+    if (iv.st !== 0) drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
+
+    if (showText) {
+      ctx.save();
+      ctx.fillStyle = iv.text;
+      ctx.globalAlpha = 0.75;
+      ctx.font = `${Math.round(11 * EXPORT_SCALE)}px sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(iv.st === 0 ? '＝ 同音' : (seg.step.up ? '▲ 上昇' : '▼ 下降'), w - 20 * EXPORT_SCALE, 18 * EXPORT_SCALE);
+      ctx.restore();
+
+      ctx.save();
+      ctx.font = `800 ${Math.round(122 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillStyle = iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(iv.st), 6 * EXPORT_SCALE, -6 * EXPORT_SCALE);
+      ctx.restore();
+
+      const padX = 22 * EXPORT_SCALE;
+      let ty = h - 108 * EXPORT_SCALE;
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = iv.text;
+      ctx.globalAlpha = 0.65;
+      ctx.font = `${Math.round(12 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText('半音', padX, ty);
+      ty += 12 * EXPORT_SCALE + 21 * EXPORT_SCALE;
+      ctx.globalAlpha = 1;
+      ctx.font = `800 ${Math.round(21 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText(iv.name, padX, ty);
+      ty += 6 * EXPORT_SCALE + 13 * EXPORT_SCALE;
+      ctx.globalAlpha = 0.9;
+      ctx.font = `700 ${Math.round(13 * EXPORT_SCALE)}px sans-serif`;
+      ctx.fillText(iv.colorName, padX, ty);
+      ty += 10 * EXPORT_SCALE + 10.5 * EXPORT_SCALE;
+      ctx.globalAlpha = 0.6;
+      ctx.font = `${Math.round(10.5 * EXPORT_SCALE)}px sans-serif`;
+      wrapTextJa(ctx, iv.nuance, padX, ty, w - padX * 2, 17 * EXPORT_SCALE);
+      ctx.restore();
+    }
+  }
+
+  function drawBlankPanel(ctx, seg, localMs, w, h, elapsedMs) {
+    drawGlassBg(ctx, w, h, elapsedMs);
+    drawExportParticles(ctx, seg, localMs, w, h, Math.min(PARTICLE_SCALE, 1));
+  }
+
+  function drawPanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    if (seg.step.type === 'note') drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs);
+    else if (seg.step.type === 'interval') drawIntervalPanel(ctx, seg, localMs, w, h, showText, elapsedMs);
+    else drawBlankPanel(ctx, seg, localMs, w, h, elapsedMs);
+  }
+
+  function drawProgressBarExport(ctx, elapsedMs, bars) {
+    if (!bars.length) return;
+    let bar = bars[0];
+    for (const b of bars) { if (elapsedMs >= b.start) bar = b; }
+    const pct = barPct({ onset: bar.start, cycles: bar.cycles }, elapsedMs) / 100;
+    const trackW = EXPORT_W * 0.9, trackH = 4 * EXPORT_SCALE;
+    const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 60 * EXPORT_SCALE;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    roundRectPath(ctx, tx, ty, trackW, trackH, trackH / 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    roundRectPath(ctx, tx, ty, trackW * pct, trackH, trackH / 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawExportFrame(ctx, elapsedMs, segs, bars, showText) {
+    ctx.clearRect(0, 0, EXPORT_W, EXPORT_H);
+    const lastSeg = segs[segs.length - 1];
+    const clampedElapsed = Math.min(elapsedMs, lastSeg.startMs + lastSeg.durMs - 1);
+    const seg = findSegment(segs, clampedElapsed);
+    const localMs = clampedElapsed - seg.startMs;
+    const prevSeg = seg.index > 0 ? segs[seg.index - 1] : null;
+
+    if (seg.slideMs > 0 && localMs < seg.slideMs && prevSeg) {
+      const raw = localMs / seg.slideMs;
+      const p = easeSlide(raw);
+      ctx.save();
+      if (seg.isUnison && seg.step.type !== 'blank') {
+        // ユニゾン（ブラックアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
+        const pf = easeFade(raw);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        const layer = getExportFadeLayer();
+        const lctx = layer.getContext('2d');
+        lctx.clearRect(0, 0, EXPORT_W, EXPORT_H);
+        drawPanel(lctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.globalAlpha = pf;
+        ctx.drawImage(layer, 0, 0);
+        ctx.globalAlpha = 1;
+      } else if (seg.step.type === 'blank') {
+        ctx.save(); ctx.translate(-p * EXPORT_W, 0);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+        ctx.save(); ctx.translate((1 - p) * EXPORT_W, 0);
+        drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+      } else {
+        const dirSign = seg.up ? 1 : -1;
+        ctx.save(); ctx.translate(0, dirSign * p * EXPORT_H);
+        drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+        ctx.save(); ctx.translate(0, dirSign * (p - 1) * EXPORT_H);
+        drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+        ctx.restore();
+      }
+      ctx.restore();
+    } else {
+      drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
+    }
+    drawProgressBarExport(ctx, clampedElapsed, bars);
+  }
+
+  // ----- 書き出しメイン処理 -----
+  let exporting = false;
+  let exportCancelRequested = false;
+
+  function scheduleExportTone(audioCtxExp, dest, semitone, atSec, durSec) {
+    const freq = 261.63 * Math.pow(2, semitone / 12);
+    const osc = audioCtxExp.createOscillator();
+    const gain = audioCtxExp.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, atSec);
+    gain.gain.exponentialRampToValueAtTime(0.22, atSec + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, atSec + durSec);
+    osc.connect(gain); gain.connect(dest);
+    osc.start(atSec); osc.stop(atSec + durSec + 0.05);
+  }
+
+  async function runExport() {
+    if (exporting) return;
+    exporting = true;
+    exportCancelRequested = false;
+    exportStartBtn.disabled = true;
+
+    const includeAudio = exportAudioToggle.checked;
+    const showText = exportIvTextToggle.checked;
+
+    const { segs, totalMs } = computeExportTimeline();
+    exportParticleCache.clear();
+    exportStarfield = null;
+    exportGlassCanvas = null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = EXPORT_W; canvas.height = EXPORT_H;
+    const ctx = canvas.getContext('2d');
+
+    const fps = 30;
+    const videoStream = canvas.captureStream(fps);
+    let exportAudioCtx = null, audioDest = null;
+    let combinedStream = videoStream;
+    if (includeAudio) {
+      exportAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioDest = exportAudioCtx.createMediaStreamDestination();
+      combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]);
+    }
+
+    const candidates = [
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    const mimeType = candidates.find(c => window.MediaRecorder && MediaRecorder.isTypeSupported(c)) || '';
+    const usingMp4 = mimeType.startsWith('video/mp4');
+
+    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType, videoBitsPerSecond: 8000000 } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    const donePromise = new Promise((resolve) => { recorder.onstop = resolve; });
+
+    const bars = computeBars(segs);
+
+    recorder.start(200);
+    const startTs = performance.now();
+
+    if (includeAudio) {
+      const audioBase = exportAudioCtx.currentTime + 0.05;
+      for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        if (seg.step.type !== 'note') continue;
+        const atSec = audioBase + (seg.startMs + seg.toneDelay) / 1000;
+        const durSec = (seg.durMs / 1000) * 0.92;
+        scheduleExportTone(exportAudioCtx, audioDest, noteSemitone(seg.step), atSec, durSec);
+      }
+    }
+
+    await new Promise((resolveFrame) => {
+      function frame() {
+        if (exportCancelRequested) { resolveFrame(); return; }
+        const elapsed = performance.now() - startTs;
+        drawExportFrame(ctx, elapsed, segs, bars, showText);
+        const pct = Math.min(100, (elapsed / totalMs) * 100);
+        exportProgressFill.style.width = pct + '%';
+        exportStatus.textContent = `書き出し中… ${Math.min(100, Math.round(pct))}%`;
+        if (elapsed >= totalMs) { resolveFrame(); return; }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    });
+
+    recorder.stop();
+    await donePromise;
+    if (exportAudioCtx) exportAudioCtx.close();
+
+    if (!exportCancelRequested && chunks.length) {
+      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+      const ext = usingMp4 ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `interval-map-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      exportStatus.textContent = usingMp4
+        ? '書き出し完了！MP4ファイルをダウンロードしました。'
+        : 'このブラウザはMP4非対応のため、.webm形式で書き出しました。';
+    } else if (exportCancelRequested) {
+      exportStatus.textContent = 'キャンセルしました。';
+    } else {
+      exportStatus.textContent = '書き出しに失敗しました。ブラウザが動画の録画に対応していない可能性があります。';
+    }
+
+    exportProgressFill.style.width = '0%';
+    exportStartBtn.disabled = false;
+    exporting = false;
+  }
+
+  exportOpenBtn.addEventListener('click', () => {
+    exportAudioToggle.checked = audioEnabled;
+    exportIvTextToggle.checked = ivTextToggle.checked;
+    exportStatus.textContent = '現在のフレーズを1回分、書き出します。';
+    exportProgressFill.style.width = '0%';
+    exportModalBackdrop.classList.remove('hidden');
+  });
+  exportCancelBtn.addEventListener('click', () => {
+    if (exporting) {
+      exportCancelRequested = true;
+    } else {
+      exportModalBackdrop.classList.add('hidden');
+    }
+  });
+  exportStartBtn.addEventListener('click', () => {
+    runExport();
+  });
+
+  progressFill.style.transition = 'none';
+  requestAnimationFrame(tickProgressBar);
+  resetStage(0);
+  beginStep(true, firstToneDelay());
+})();
+</script>
