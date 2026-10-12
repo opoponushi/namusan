@@ -458,13 +458,13 @@
   .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
   .phrase-chip.dragging { opacity: 0.35; }
   .phrase-chip-tied { opacity: 0.32; cursor: default; }
-  /* 同音のリピート復帰：白く飛んでから静かに戻る（横には動かさない） */
-  .whiteout-layer {
+  /* 同音のリピート復帰：暗転してから静かに戻る（横には動かさない） */
+  .blackout-layer {
     position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(circle at 50% 42%, #FFFFFF 0%, #F6F8FF 60%, #E9EEFB 100%);
-    animation: whiteoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
+    background: #000;
+    animation: blackoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
   }
-  @keyframes whiteoutFade { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes blackoutFade { from { opacity: 1; } to { opacity: 0; } }
   .phrase-slot.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
   .phrase-chip { position: relative; }
   .oct-mark { position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: var(--accent-blue); line-height: 1; }
@@ -564,7 +564,7 @@
   const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
 
   const INTERVALS = [
-    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ホワイト（ホワイトアウト）', grad: ['#FFFFFF','#FBFCFF','#F2F5FF','#E6EBFA'], text:'#1a1a1a', nuance:'音が移動していない（同じ音のまま）' },
+    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ブラック（ブラックアウト）', grad: ['#000000','#020204','#05060B','#0A0C14'], text:'#fff', nuance:'音が移動していない（同じ音のまま）' },
     { st: 1,  name: '短2度',                       colorName: '青 メタリック',          grad: ['#3B82F6','#2359CB','#1744B5','#0B2F9F'], text:'#fff', nuance:'最も近い、ぶつかりの音（半音）' },
     { st: 2,  name: '長2度',                       colorName: '赤 メタリック',          grad: ['#EF4444','#BF2929','#A61C1C','#8E0E0E'], text:'#fff', nuance:'明るくはっきりとした上昇' },
     { st: 3,  name: '短3度',                       colorName: '紫 メタリック',          grad: ['#A78BFA','#9070E1','#7A54C8','#6339AE','#4C1D95'], text:'#fff', nuance:'哀しく神秘的な暗さ' },
@@ -748,9 +748,9 @@
     const el = document.createElement('div');
     if (step.type === 'blank') {
       el.className = 'panel panel-blank';
-      if (step.whiteout) {
-        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、白く飛んでから静かに戻る
-        el.innerHTML = `<div class="whiteout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
+      if (step.blackout) {
+        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、暗転してから静かに戻る
+        el.innerHTML = `<div class="blackout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
         return el;
       }
       // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
@@ -809,8 +809,7 @@
     el.style.setProperty('--drift', `${drift.toFixed(1)}px`);
     el.style.setProperty('--num-scale', numScale.toFixed(3));
     el.innerHTML = `
-      <div class="iv-iris ${dir}"></div>
-      <div class="iv-spec ${dir}"></div>
+      ${iv.st === 0 ? '' : `<div class="iv-iris ${dir}"></div><div class="iv-spec ${dir}"></div>`}
       ${iv.st === 0 ? '' : particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
       <div class="iv-dir">${iv.st === 0 ? '＝ 同音' : (step.up ? '▲ 上昇' : '▼ 下降')}</div>
       <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
@@ -1089,8 +1088,8 @@
     const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
 
-    if (isUnison && (step.type !== 'blank' || step.whiteout)) {
-      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、白へ溶けるようにクロスフェードする（ホワイトアウト）
+    if (isUnison && (step.type !== 'blank' || step.blackout)) {
+      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、暗転へ溶けるようにクロスフェードする（ブラックアウト）
       incoming.style.top = '0';
       incoming.style.left = '0';
       incoming.style.opacity = '0';
@@ -1102,7 +1101,7 @@
       const fadeCss = `opacity ${slideMs}ms ease-out`;
       incoming.style.transition = fadeCss;
       incoming.style.opacity = '1';
-      // 白（不透明）へ入る時は下のパネルをそのまま残し、白から戻る時だけ白を溶かして背景を透かす
+      // 暗転（不透明）へ入る時は下のパネルをそのまま残し、暗転から戻る時だけ暗転を溶かして背景を透かす
       if (currentPanel && step.type !== 'interval') {
         currentPanel.style.transition = fadeCss;
         currentPanel.style.opacity = '0';
@@ -1215,10 +1214,10 @@
       const blankDur = leadMs() + durationOf(0);
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       // 最後のノーツと最初のノーツが同音（①→①など）なら音が移動していないので、
-      // 横スライドではなくホワイトアウトにする。同音でないリピートは従来どおり
+      // 横スライドではなくブラックアウトにする。同音でないリピートは従来どおり
       const lastStep = steps[index];
       const sameAsFirst = lastStep.type === 'note' && noteSemitone(lastStep) === noteSemitone(steps[0]);
-      slideTo({ type: 'blank', whiteout: sameAsFirst }, true, blankSlideMs, blankDur, true);
+      slideTo({ type: 'blank', blackout: sameAsFirst }, true, blankSlideMs, blankDur, true);
       bottomHideable.classList.remove('hidden');
       // 進行バーはリセットせず、直前のノーツ開始時に張ったバーをそのまま継続させる
       stepDuration = blankDur;
@@ -1900,11 +1899,12 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // 同音は音が移動していないので、虹彩の流れは出さず静かな暗転にする
     const t = clamp01(localMs / seg.durMs);
     const eIris = easeIris(t);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.5 * IRIS_SCALE;
+    ctx.globalAlpha = iv.st === 0 ? 0 : 0.5 * IRIS_SCALE;
     const travel = h * 1.3;
     const irisY = seg.up ? (1 - eIris * 2) * travel : (eIris * 2 - 1) * travel;
     const irisGrad = ctx.createLinearGradient(0, irisY - h * 0.5, 0, irisY + h * 0.5);
@@ -2003,7 +2003,7 @@
       const p = easeSlide(raw);
       ctx.save();
       if (seg.isUnison && seg.step.type !== 'blank') {
-        // ユニゾン（ホワイトアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
+        // ユニゾン（ブラックアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
         const pf = easeFade(raw);
         drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
         const layer = getExportFadeLayer();
