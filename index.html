@@ -737,6 +737,8 @@
   // ノーツ1つ分の「発音」と「アイコン表示」のタイミング（ms、ステップ開始からの相対）。
   // アイコンのフェードインは発音の瞬間に完了するよう逆算して開始を決める。
   // 画面と動画書き出しで同じ値を使う
+  // durMs には「タイを含まない基本のノーツ長（noteMs）」を渡す。タイで長いノーツでも発音位置は他と同じにして、
+  // 発音間隔（拍）が偏らないようにする
   function noteTiming(slideMs, durMs) {
     const toneDelay = Math.max(0, Math.min(slideMs * 2, durMs * 0.6));
     const iconDur = Math.max(80, Math.min(slideMs, toneDelay * 0.6));
@@ -1165,7 +1167,7 @@
   // 遅らせないと「1音目→2音目」の発音間隔だけ遅延分（約0.24秒）長くなり、1音目が長く聞こえる
   function firstToneDelay() {
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
-    return noteTiming(slideMs, durationOf(0)).toneDelay;
+    return noteTiming(slideMs, noteMs()).toneDelay;
   }
 
   function beginStep(withTone, toneDelayMs) {
@@ -1189,7 +1191,7 @@
       // 合わせた長さで1本につなげて表示する
       const nextIdx = (index + 1) % steps.length;
       const intervalMs = nextIdx === 0
-        ? (leadMs() + durationOf(0)) // 次がリピート（黒画面）：黒画面自体の長さ分
+        ? leadMs() // 次がリピート：通常のインターバルと同じ長さ（最後のノーツも1拍=ノート＋インターバル）
         : (steps[nextIdx].type === 'interval' ? durationOf(nextIdx) : 0);
       barTotalMs = stepDuration + intervalMs;
       barStartTs = stepStartTs;
@@ -1216,9 +1218,10 @@
         playPauseBtn.textContent = '▶';
         return;
       }
-      // フレーズの先頭に戻る（リピート）：最後の音の後に本来続くはずの「ノーツ＋インターバル」分の
-      // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
-      const blankDur = leadMs() + durationOf(0);
+      // フレーズの先頭に戻る（リピート）：最後の音の後は、他のノーツと同じ「インターバル」分の長さだけ
+      // 黒画面（または同音ならブラックアウト）を挟む。最後のノーツも他と同じ1拍（ノート＋インターバル）にして
+      // 最後→先頭の発音間隔を揃える
+      const blankDur = leadMs();
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       // 最後のノーツと最初のノーツが同音（①→①など）なら音が移動していないので、
       // 横スライドではなくブラックアウトにする。同音でないリピートは従来どおり
@@ -1250,7 +1253,7 @@
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
     // 発音の瞬間にアイコン表示が完了するよう、発音タイミングとアイコンの開始を揃えて決める
     // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ発音遅延を適用する
-    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, durationOf(nextIndex)) : null;
+    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, noteMs()) : null;
 
     slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison, timing);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
@@ -1269,7 +1272,7 @@
     // 最初に出るノーツにも、2音目以降と同じアイコンのフェードイン（発音の瞬間に完了）を付ける
     const first = steps[index];
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
-    const timing = first.type === 'note' ? noteTiming(slideMs, durationOf(index)) : null;
+    const timing = first.type === 'note' ? noteTiming(slideMs, noteMs()) : null;
     currentPanel = panelEl(first, durationOf(index), timing ? 'up' : null, timing);
     currentPanel.style.top = '0';
     trackEl.appendChild(currentPanel);
@@ -1663,12 +1666,12 @@
         const baseDur = step.type === 'note' ? noteMs() : leadMs();
         slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, baseDur * 0.7);
         if (step.type === 'note') {
-          const nt = noteTiming(slideMs, durMs);
+          const nt = noteTiming(slideMs, noteMs());
           toneDelay = nt.toneDelay; iconDelay = nt.iconDelay; iconDur = nt.iconDur;
         }
       } else if (step.type === 'note') {
         // 1音目：登場アニメーションは無いが、発音は2音目以降と同じ遅延に揃える（画面側 firstToneDelay と同じ式）
-        const nt0 = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), durMs);
+        const nt0 = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), noteMs());
         toneDelay = nt0.toneDelay; iconDelay = nt0.iconDelay; iconDur = nt0.iconDur;
       }
       const hasIconAnim = step.type === 'note' && !isUnison;
