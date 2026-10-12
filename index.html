@@ -290,28 +290,38 @@
     .iv-iris, .iv-spec, .iv-particle, .panel-interval .iv-num, .panel-interval .iv-text { animation: none !important; }
     .iv-iris { opacity: 0.35; }
     .iv-particles { display: none; }
-    .glyph-wrap.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .icon-stack.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
   }
   .iv-dir { position: absolute; top: 18px; right: 20px; font-size: 11px; opacity: 0.75; letter-spacing: 0.04em; }
 
   .deg-label { font-size: 26px; font-weight: 800; color: #F3F6FF; letter-spacing: 0.04em; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
   .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
+  /* アイコン＋度数ラベルは背景パネルのスライドから切り離し、画面中央に固定する */
+  .icon-layer {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .icon-stack { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 
   /* ===== 図形アイコンの登場アニメーション（パネル全体のスライドとは分離） =====
      パネルのスライドが完了するまではフェードイン前の状態で待機させ（animation-delay）、
      スライド完了後にアイコンだけが独立して動いて見えるようにする。
      上昇：基準点より約40px下からフェードインしながら上がってくる
      下降：その逆（上から下がってくる） */
-  .glyph-wrap.icon-enter {
+  .icon-stack.icon-enter {
     animation-duration: var(--icon-anim-dur, 260ms);
     animation-delay: var(--icon-anim-delay, 0ms);
     animation-timing-function: cubic-bezier(.22,.9,.32,1);
     animation-fill-mode: both;
   }
-  .glyph-wrap.icon-enter.up   { animation-name: iconEnterUp; }
-  .glyph-wrap.icon-enter.down { animation-name: iconEnterDown; }
-  @keyframes iconEnterUp   { from { transform: translateY(40px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  @keyframes iconEnterDown { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .icon-stack.icon-enter.up    { animation-name: iconEnterUp; }
+  .icon-stack.icon-enter.down  { animation-name: iconEnterDown; }
+  .icon-stack.icon-enter.still { animation-name: iconEnterStill; }
+  /* 位置は画面中央で固定のまま、直前の音からの動きの向きに16pxだけ寄せた位置からフェードインする */
+  @keyframes iconEnterUp    { from { transform: translateY(16px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterDown  { from { transform: translateY(-16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterStill { from { opacity: 0; } to { opacity: 1; } }
 
   .chip {
     background: rgba(0,0,0,0.32);
@@ -342,7 +352,7 @@
 
   .bottom-zone { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 6; }
   .bottom-hideable { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; transition: opacity 200ms ease; }
-  .progress-track { width: 62%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
+  .progress-track { width: 90%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
   .progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 999px; }
   .controls { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
   .controls-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; }
@@ -458,13 +468,13 @@
   .phrase-slot .phrase-chip { width: 100%; height: 100%; border: none; background: transparent; font-size: 14px; }
   .phrase-chip.dragging { opacity: 0.35; }
   .phrase-chip-tied { opacity: 0.32; cursor: default; }
-  /* 同音のリピート復帰：白く飛んでから静かに戻る（横には動かさない） */
-  .whiteout-layer {
+  /* 同音のリピート復帰：暗転してから静かに戻る（横には動かさない） */
+  .blackout-layer {
     position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(circle at 50% 42%, #FFFFFF 0%, #F6F8FF 60%, #E9EEFB 100%);
-    animation: whiteoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
+    background: #000;
+    animation: blackoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
   }
-  @keyframes whiteoutFade { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes blackoutFade { from { opacity: 1; } to { opacity: 0; } }
   .phrase-slot.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 1px var(--accent-blue); }
   .phrase-chip { position: relative; }
   .oct-mark { position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: var(--accent-blue); line-height: 1; }
@@ -564,7 +574,7 @@
   const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
 
   const INTERVALS = [
-    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ホワイト（ホワイトアウト）', grad: ['#FFFFFF','#FBFCFF','#F2F5FF','#E6EBFA'], text:'#1a1a1a', nuance:'音が移動していない（同じ音のまま）' },
+    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ブラック（ブラックアウト）', grad: ['#000000','#020204','#05060B','#0A0C14'], text:'#fff', nuance:'音が移動していない（同じ音のまま）' },
     { st: 1,  name: '短2度',                       colorName: '青 メタリック',          grad: ['#3B82F6','#2359CB','#1744B5','#0B2F9F'], text:'#fff', nuance:'最も近い、ぶつかりの音（半音）' },
     { st: 2,  name: '長2度',                       colorName: '赤 メタリック',          grad: ['#EF4444','#BF2929','#A61C1C','#8E0E0E'], text:'#fff', nuance:'明るくはっきりとした上昇' },
     { st: 3,  name: '短3度',                       colorName: '紫 メタリック',          grad: ['#A78BFA','#9070E1','#7A54C8','#6339AE','#4C1D95'], text:'#fff', nuance:'哀しく神秘的な暗さ' },
@@ -737,6 +747,27 @@
   // ノーツ1つ分の「発音」と「アイコン表示」のタイミング（ms、ステップ開始からの相対）。
   // アイコンのフェードインは発音の瞬間に完了するよう逆算して開始を決める。
   // 画面と動画書き出しで同じ値を使う
+  // durMs には「タイを含まない基本のノーツ長（noteMs）」を渡す。タイで長いノーツでも発音位置は他と同じにして、
+  // 発音間隔（拍）が偏らないようにする
+  // アイコン（＋度数ラベル）を画面中央に固定して表示する。背景パネルのスライドとは独立。
+  // iconDir: 'up'=下から上へ16px / 'down'=上から下へ16px / null=動きなしのフェードインのみ
+  function showIcon(step, iconDir, timing) {
+    const d = DEG[step.key];
+    const t = timing || { iconDelay: 0, iconDur: 160 };
+    const oct = octLabel(step.oct);
+    const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
+    iconLayer.style.transition = 'none';
+    iconLayer.style.opacity = '1';
+    iconLayer.innerHTML =
+      `<div class="icon-stack icon-enter ${iconDir || 'still'}" style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms">`
+      + `<div class="glyph-wrap">${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div>`
+      + `<div class="deg-label">${step.key}${badge}</div></div>`;
+  }
+  function hideIcon(ms) {
+    iconLayer.style.transition = `opacity ${Math.round(ms)}ms ease-out`;
+    iconLayer.style.opacity = '0';
+  }
+
   function noteTiming(slideMs, durMs) {
     const toneDelay = Math.max(0, Math.min(slideMs * 2, durMs * 0.6));
     const iconDur = Math.max(80, Math.min(slideMs, toneDelay * 0.6));
@@ -748,9 +779,9 @@
     const el = document.createElement('div');
     if (step.type === 'blank') {
       el.className = 'panel panel-blank';
-      if (step.whiteout) {
-        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、白く飛んでから静かに戻る
-        el.innerHTML = `<div class="whiteout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
+      if (step.blackout) {
+        // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、暗転してから静かに戻る
+        el.innerHTML = `<div class="blackout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
         return el;
       }
       // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
@@ -758,15 +789,8 @@
       return el;
     }
     if (step.type === 'note') {
-      const d = DEG[step.key];
+      // ノートパネルは背景（すりガラス）だけ。アイコンと度数ラベルは別レイヤー(showIcon)で中央に固定して出す
       el.className = 'panel panel-note';
-      // アイコンのフェードインは発音の瞬間に完了するよう、noteTimingで求めた遅延・長さを使う
-      const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
-      const t = timing || { iconDelay: 0, iconDur: 260 };
-      const enterStyle = iconDir ? ` style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms"` : '';
-      const oct = octLabel(step.oct);
-      const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
-      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}${badge}</div>`;
       return el;
     }
     const iv = step.iv;
@@ -809,8 +833,7 @@
     el.style.setProperty('--drift', `${drift.toFixed(1)}px`);
     el.style.setProperty('--num-scale', numScale.toFixed(3));
     el.innerHTML = `
-      <div class="iv-iris ${dir}"></div>
-      <div class="iv-spec ${dir}"></div>
+      ${iv.st === 0 ? '' : `<div class="iv-iris ${dir}"></div><div class="iv-spec ${dir}"></div>`}
       ${iv.st === 0 ? '' : particlesHTML(iv, particleDir, Math.round(durationMs || 320))}
       <div class="iv-dir">${iv.st === 0 ? '＝ 同音' : (step.up ? '▲ 上昇' : '▼ 下降')}</div>
       <div class="iv-num ${dir}" style="color:${iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)'}">${iv.st}</div>
@@ -828,13 +851,14 @@
   // ============================================================
   root.innerHTML = `
     <div class="brand">
-      <div class="eyebrow-label">INTERVAL MAP — PROTOTYPE v17</div>
+      <div class="eyebrow-label">INTERVAL MAP — PROTOTYPE v20</div>
       <div class="title">音の地図</div>
     </div>
 
     <div class="frame" id="frame">
       <div class="frame-bg" id="frameBg"></div>
       <div class="track" id="track"></div>
+      <div class="icon-layer" id="iconLayer"></div>
 
       <div class="bottom-zone" id="bottomZone">
         <div class="bottom-hideable" id="bottomHideable">
@@ -861,7 +885,7 @@
       </div>
       <div>
         <div class="phrase-row-header">
-          <label>フレーズ入力（ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを伸ばすタイとして機能）</label>
+          <label>フレーズ入力（ドラッグ＆ドロップで配置／並べ替え／外に出して削除・空白は直前のノーツを1マス=1拍ずつ伸ばすタイとして機能）</label>
           <div class="phrase-header-actions">
             <button class="reset-btn small" id="rowMinus" title="行を削除（-8ノーツ）">－</button>
             <span class="row-count-label" id="rowCountLabel">4行</span>
@@ -934,6 +958,7 @@
   const trackEl = document.getElementById('track');
   renderStarfield(document.getElementById('frameBg'));
   const frameEl = document.getElementById('frame');
+  const iconLayer = document.getElementById('iconLayer');
   const progressFill = document.getElementById('progressFill');
   const playPauseBtn = document.getElementById('playPause');
   const loopToggleBtn = document.getElementById('loopToggle');
@@ -1028,10 +1053,6 @@
   let remainingOnPause = null;
   let stepTimer = null;
   let stepTimerCallback = null; // 一時停止からの再開時に呼び直すコールバック
-  // 進行バー表示用：ノーツ＋続くインターバル分をまとめた長さを別途管理する
-  let barStartTs = 0;
-  let barTotalMs = 0;
-  let barRemainingOnPause = null;
   let toneTimer = null; // アイコンのフェードイン完了に合わせて音を遅らせるためのタイマー
 
   let currentPanel = null;
@@ -1088,9 +1109,12 @@
     const iconDir = isUnison ? null : (up ? 'up' : 'down');
     const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
+    // アイコンは背景のスライドに乗せず、ノーツなら中央で表示し直し、インターバル等なら背景に合わせて消す
+    if (step.type === 'note') showIcon(step, iconDir, timing);
+    else hideIcon(slideMs);
 
-    if (isUnison && (step.type !== 'blank' || step.whiteout)) {
-      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、白へ溶けるようにクロスフェードする（ホワイトアウト）
+    if (isUnison && (step.type !== 'blank' || step.blackout)) {
+      // 音高が変わらない（ユニゾン）遷移は向きを持たせず、暗転へ溶けるようにクロスフェードする（ブラックアウト）
       incoming.style.top = '0';
       incoming.style.left = '0';
       incoming.style.opacity = '0';
@@ -1102,7 +1126,7 @@
       const fadeCss = `opacity ${slideMs}ms ease-out`;
       incoming.style.transition = fadeCss;
       incoming.style.opacity = '1';
-      // 白（不透明）へ入る時は下のパネルをそのまま残し、白から戻る時だけ白を溶かして背景を透かす
+      // 暗転（不透明）へ入る時は下のパネルをそのまま残し、暗転から戻る時だけ暗転を溶かして背景を透かす
       if (currentPanel && step.type !== 'interval') {
         currentPanel.style.transition = fadeCss;
         currentPanel.style.opacity = '0';
@@ -1138,20 +1162,33 @@
   // ============================================================
   // 進行バー
   // ============================================================
-  function startProgressBar(durationMs, fromPct) {
-    progressFill.style.transition = 'none';
-    progressFill.style.width = (fromPct || 0) + '%';
-    void progressFill.offsetWidth;
-    progressFill.style.transition = `width ${durationMs}ms linear`;
-    progressFill.style.width = '100%';
+  // 1マス=1拍ごとに、発音の瞬間に左端から伸び始め、次の拍の頭で右端に届く。
+  // タイ（空白）が続くノーツでも、拍ごとにバーが左端へ戻る。
+  // 区間 b = { onset: 発音時刻(performance.now基準), cycles: [各拍の長さ(ms) ...] }
+  let barCur = null;
+  let barNext = null;      // 発音の瞬間まで、直前の区間を右端まで伸ばし切るために待たせておく区間
+  let barPausedAt = null;
+  function barPct(b, now) {
+    const e = now - b.onset;
+    if (e < 0) return 0;
+    let acc = 0;
+    for (const len of b.cycles) {
+      if (e < acc + len) return ((e - acc) / len) * 100;
+      acc += len;
+    }
+    return 100;
   }
-  function freezeProgressBar() {
-    const rect = progressFill.getBoundingClientRect();
-    const trackRect = progressFill.parentElement.getBoundingClientRect();
-    const pct = trackRect.width ? (rect.width / trackRect.width) * 100 : 0;
-    progressFill.style.transition = 'none';
-    progressFill.style.width = pct + '%';
-    return pct;
+  function tickProgressBar() {
+    requestAnimationFrame(tickProgressBar);
+    if (!playing) return;
+    const now = performance.now();
+    if (barNext && now >= barNext.onset) { barCur = barNext; barNext = null; }
+    progressFill.style.width = (barCur ? barPct(barCur, now) : 0).toFixed(2) + '%';
+  }
+  function resetProgressBar() {
+    barCur = null;
+    barNext = null;
+    progressFill.style.width = '0%';
   }
 
   // ============================================================
@@ -1159,7 +1196,15 @@
   // ============================================================
   function durationOf(i) {
     const s = steps[i];
-    return s.type === 'note' ? noteMs() * (1 + (s.hold || 0)) : leadMs();
+    // タイ（空白）は1マス=ちょうど1拍ずつ伸ばす（ノーツ＋インターバル＝1拍を守るため、伸ばす分は拍単位）
+    return s.type === 'note' ? noteMs() + (s.hold || 0) * beatMs() : leadMs();
+  }
+
+  // フレーズの1音目も、2音目以降と同じだけ発音をステップ頭から遅らせる。
+  // 遅らせないと「1音目→2音目」の発音間隔だけ遅延分（約0.24秒）長くなり、1音目が長く聞こえる
+  function firstToneDelay() {
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
+    return noteTiming(slideMs, noteMs()).toneDelay;
   }
 
   function beginStep(withTone, toneDelayMs) {
@@ -1170,8 +1215,8 @@
     remainingOnPause = null;
 
     const s = steps[index];
+    const delay = s.type === 'note' ? Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6)) : 0;
     if (withTone !== false && s.type === 'note') {
-      const delay = Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6));
       if (delay > 0) {
         toneTimer = setTimeout(() => playTone(noteSemitone(s), (stepDuration / 1000) * 0.92), delay);
       } else {
@@ -1179,17 +1224,22 @@
       }
     }
     if (s.type === 'note') {
-      // ノーツの進行バーは、続くインターバル分（最後のノーツ→リピートの黒画面も含む）を
-      // 合わせた長さで1本につなげて表示する
+      // 進行バーは1マス=1拍。発音の瞬間に左端から伸び始め、タイが続けば拍ごとに左端へ戻る。
+      // 発音は画面の切り替わりより遅れるので、直前の区間を右端まで伸ばし切ってから切り替える
+      const cells = 1 + (s.hold || 0);
+      const cycles = new Array(cells).fill(beatMs());
       const nextIdx = (index + 1) % steps.length;
-      const intervalMs = nextIdx === 0
-        ? (leadMs() + durationOf(0)) // 次がリピート（黒画面）：黒画面自体の長さ分
-        : (steps[nextIdx].type === 'interval' ? durationOf(nextIdx) : 0);
-      barTotalMs = stepDuration + intervalMs;
-      barStartTs = stepStartTs;
-      startProgressBar(barTotalMs);
+      // ループOFFの最後のノーツは、再生が止まる瞬間に右端へ届くようにする
+      if (nextIdx === 0 && !loopEnabled) cycles[cells - 1] = Math.max(1, noteMs() - delay);
+      const nb = { onset: stepStartTs + delay, cycles };
+      if (delay > 0 && barCur) {
+        barNext = nb;
+      } else {
+        barCur = nb;
+        barNext = null;
+      }
     }
-    // インターバル中は何もしない：ノーツ開始時に張ったバーをそのまま継続させる
+    // インターバル中は何もしない：発音時に張った区間をそのまま継続させる
 
     if (playing) {
       stepTimerCallback = onStepEnd;
@@ -1208,17 +1258,19 @@
         playing = false;
         phraseFinished = true;
         playPauseBtn.textContent = '▶';
+        progressFill.style.width = '100%';
         return;
       }
-      // フレーズの先頭に戻る（リピート）：最後の音の後に本来続くはずの「ノーツ＋インターバル」分の
-      // 長さを黒画面にまとめて持たせ、横スライドで一度だけ挟む
-      const blankDur = leadMs() + durationOf(0);
+      // フレーズの先頭に戻る（リピート）：最後の音の後は、他のノーツと同じ「インターバル」分の長さだけ
+      // 黒画面（または同音ならブラックアウト）を挟む。最後のノーツも他と同じ1拍（ノート＋インターバル）にして
+      // 最後→先頭の発音間隔を揃える
+      const blankDur = leadMs();
       const blankSlideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, blankDur * 0.7);
       // 最後のノーツと最初のノーツが同音（①→①など）なら音が移動していないので、
-      // 横スライドではなくホワイトアウトにする。同音でないリピートは従来どおり
+      // 横スライドではなくブラックアウトにする。同音でないリピートは従来どおり
       const lastStep = steps[index];
       const sameAsFirst = lastStep.type === 'note' && noteSemitone(lastStep) === noteSemitone(steps[0]);
-      slideTo({ type: 'blank', whiteout: sameAsFirst }, true, blankSlideMs, blankDur, true);
+      slideTo({ type: 'blank', blackout: sameAsFirst }, true, blankSlideMs, blankDur, true);
       bottomHideable.classList.remove('hidden');
       // 進行バーはリセットせず、直前のノーツ開始時に張ったバーをそのまま継続させる
       stepDuration = blankDur;
@@ -1229,7 +1281,7 @@
       stepTimerCallback = () => {
         resetStage(0);
         // 他の遷移と同じ「アイコンのフェードイン完了に音を合わせる」遅延を、リピート復帰時にも適用する
-        beginStep(true, blankSlideMs * 2);
+        beginStep(true, firstToneDelay());
       };
       stepTimer = setTimeout(stepTimerCallback, blankDur);
       return;
@@ -1244,7 +1296,7 @@
     const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, nextDur * 0.7);
     // 発音の瞬間にアイコン表示が完了するよう、発音タイミングとアイコンの開始を揃えて決める
     // ユニゾンはアイコンアニメーションが無いが、リズムを均一にするため同じ発音遅延を適用する
-    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, durationOf(nextIndex)) : null;
+    const timing = steps[nextIndex].type === 'note' ? noteTiming(slideMs, noteMs()) : null;
 
     slideTo(steps[nextIndex], up, slideMs, nextDur, isUnison, timing);
     index = nextIndex;   // 見た目の完了を待たず、論理上は即座に次へ
@@ -1260,9 +1312,15 @@
     trackEl.innerHTML = '';
     trackEl.style.transition = 'none';
     trackEl.style.transform = 'translateY(0)';
-    currentPanel = panelEl(steps[index], durationOf(index));
+    // 最初に出るノーツにも、2音目以降と同じアイコンのフェードイン（発音の瞬間に完了）を付ける
+    const first = steps[index];
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
+    const timing = first.type === 'note' ? noteTiming(slideMs, noteMs()) : null;
+    currentPanel = panelEl(first, durationOf(index), timing ? 'up' : null, timing);
     currentPanel.style.top = '0';
     trackEl.appendChild(currentPanel);
+    if (first.type === 'note') showIcon(first, 'up', timing);
+    else hideIcon(0);
     phraseChip.textContent = 'PHRASE — ' + PHRASE.map(n => n.key + octLabel(n.oct)).join(' ');
   }
 
@@ -1275,28 +1333,30 @@
       phraseFinished = false;
       playing = true;
       playPauseBtn.textContent = '❚❚';
+      resetProgressBar();
       resetStage(0);
-      beginStep();
+      beginStep(true, firstToneDelay());
       return;
     }
     playing = !playing;
     playPauseBtn.textContent = playing ? '❚❚' : '▶';
     if (playing) {
       const remaining = remainingOnPause != null ? remainingOnPause : stepDuration;
-      const barRemaining = barRemainingOnPause != null ? barRemainingOnPause : (barTotalMs - (performance.now() - barStartTs));
-      const pct = 100 - (barRemaining / barTotalMs) * 100;
-      startProgressBar(barRemaining, pct);
       stepTimer = setTimeout(stepTimerCallback, remaining);
       stepStartTs = performance.now() - (stepDuration - remaining);
-      barStartTs = performance.now() - (barTotalMs - barRemaining);
+      // 止まっていた分だけバーの区間を後ろへずらして、止めた位置から再開する
+      if (barPausedAt != null) {
+        const dt = performance.now() - barPausedAt;
+        if (barCur) barCur.onset += dt;
+        if (barNext) barNext.onset += dt;
+        barPausedAt = null;
+      }
       remainingOnPause = null;
-      barRemainingOnPause = null;
     } else {
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
       remainingOnPause = Math.max(stepDuration - (performance.now() - stepStartTs), 0);
-      barRemainingOnPause = Math.max(barTotalMs - (performance.now() - barStartTs), 0);
-      freezeProgressBar();
+      barPausedAt = performance.now();
     }
   });
 
@@ -1339,8 +1399,9 @@
     playing = true;
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
     resetStage(0);
-    beginStep();
+    beginStep(true, firstToneDelay());
   });
 
   ivTextToggle.addEventListener('change', () => {
@@ -1412,8 +1473,9 @@
     playing = true;
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
     resetStage(0);
-    beginStep();
+    beginStep(true, firstToneDelay());
   }
 
   function updateRowControls() {
@@ -1642,7 +1704,7 @@
     let t = 0;
     for (let i = 0; i < timelineSteps.length; i++) {
       const step = timelineSteps[i];
-      const durMs = step.type === 'note' ? noteMs() * (1 + (step.hold || 0)) : leadMs();
+      const durMs = step.type === 'note' ? noteMs() + (step.hold || 0) * beatMs() : leadMs();
       let slideMs = 0, up = true, isUnison = false;
       let toneDelay = 0, iconDelay = 0, iconDur = 0;
       if (i > 0) {
@@ -1653,12 +1715,15 @@
         const baseDur = step.type === 'note' ? noteMs() : leadMs();
         slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, baseDur * 0.7);
         if (step.type === 'note') {
-          const nt = noteTiming(slideMs, durMs);
+          const nt = noteTiming(slideMs, noteMs());
           toneDelay = nt.toneDelay; iconDelay = nt.iconDelay; iconDur = nt.iconDur;
         }
+      } else if (step.type === 'note') {
+        // 1音目：登場アニメーションは無いが、発音は2音目以降と同じ遅延に揃える（画面側 firstToneDelay と同じ式）
+        const nt0 = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), noteMs());
+        toneDelay = nt0.toneDelay; iconDelay = nt0.iconDelay; iconDur = nt0.iconDur;
       }
-      const hasIconAnim = step.type === 'note' && i > 0 && !isUnison;
-      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, toneDelay, iconDelay, iconDur, index: i });
+      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, toneDelay, iconDelay, iconDur, index: i });
       t += durMs;
     }
     return { segs, totalMs: t };
@@ -1675,9 +1740,12 @@
     const bars = [];
     for (let i = 0; i < segs.length; i++) {
       if (segs[i].step.type !== 'note') continue;
-      const next = segs[i + 1];
-      const total = segs[i].durMs + (next && next.step.type === 'interval' ? next.durMs : 0);
-      bars.push({ start: segs[i].startMs, total });
+      // 1マス=1拍。発音の瞬間に左端から伸び始め、タイが続けば拍ごとに左端へ戻る（最後は書き出しの終わりで右端）
+      const onset = segs[i].startMs + segs[i].toneDelay;
+      const cells = 1 + (segs[i].step.hold || 0);
+      const cycles = new Array(cells).fill(beatMs());
+      if (!segs[i + 1]) cycles[cells - 1] = Math.max(1, noteMs() - segs[i].toneDelay);
+      bars.push({ start: onset, cycles });
     }
     return bars;
   }
@@ -1851,45 +1919,55 @@
 
   // ----- パネル描画（note / interval / blank） -----
   function drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    // 背景（すりガラス）だけ。アイコンと度数ラベルは drawIconLayer で中央に固定して重ねる
     drawGlassBg(ctx, w, h, elapsedMs);
-    const d = DEG[seg.step.key];
-    let iconOpacity = 1, iconTranslateY = 0;
-    if (seg.hasIconAnim) {
-      const raw = clamp01((localMs - seg.iconDelay) / seg.iconDur);
-      const e = easeIcon(raw);
-      iconOpacity = e;
-      const dirSign = seg.up ? 1 : -1;
-      iconTranslateY = (1 - e) * 40 * dirSign * EXPORT_SCALE;
-    }
+  }
+
+  // アイコン＋度数ラベルを画面中央に固定して描く（背景パネルのスライドとは独立）
+  function drawIconAndLabel(ctx, step, w, h, opacity, dy, showText) {
+    const d = DEG[step.key];
     const iconSize = GLYPH_SIZE * EXPORT_SCALE;
     const iconCenterY = h * 0.44;
-    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, iconOpacity, iconTranslateY);
-    if (showText) {
-      ctx.save();
-      ctx.fillStyle = '#F3F6FF';
+    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, opacity, dy);
+    if (!showText) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = '#F3F6FF';
+    ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+    ctx.textBaseline = 'middle';
+    const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE + dy;
+    const oct = octLabel(step.oct);
+    if (!oct) {
+      ctx.textAlign = 'center';
+      ctx.fillText(step.key, w / 2, labelY);
+    } else {
+      // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
+      const keyW = ctx.measureText(step.key).width;
+      const gap = 8 * EXPORT_SCALE;
+      const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = badgeFont;
+      const badgeW = ctx.measureText(oct).width;
+      const startX = w / 2 - (keyW + gap + badgeW) / 2;
+      ctx.textAlign = 'left';
       ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
-      ctx.textBaseline = 'middle';
-      const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE;
-      const oct = octLabel(seg.step.oct);
-      if (!oct) {
-        ctx.textAlign = 'center';
-        ctx.fillText(seg.step.key, w / 2, labelY);
-      } else {
-        // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
-        const keyW = ctx.measureText(seg.step.key).width;
-        const gap = 8 * EXPORT_SCALE;
-        const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
-        ctx.font = badgeFont;
-        const badgeW = ctx.measureText(oct).width;
-        const startX = w / 2 - (keyW + gap + badgeW) / 2;
-        ctx.textAlign = 'left';
-        ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
-        ctx.fillText(seg.step.key, startX, labelY);
-        ctx.font = badgeFont;
-        ctx.globalAlpha = 0.8;
-        ctx.fillText(oct, startX + keyW + gap, labelY);
-      }
-      ctx.restore();
+      ctx.fillText(step.key, startX, labelY);
+      ctx.font = badgeFont;
+      ctx.globalAlpha = opacity * 0.8;
+      ctx.fillText(oct, startX + keyW + gap, labelY);
+    }
+    ctx.restore();
+  }
+
+  function drawIconLayer(ctx, seg, prevSeg, localMs, w, h, showText) {
+    if (seg.step.type === 'note') {
+      // 発音の瞬間に表示が完了するフェードイン。直前の音からの動きの向きに16pxだけ寄せた位置から（同音は動きなし）
+      const e = easeIcon(clamp01((localMs - seg.iconDelay) / Math.max(1, seg.iconDur)));
+      const dy = seg.isUnison ? 0 : (1 - e) * 16 * (seg.up ? 1 : -1) * EXPORT_SCALE;
+      if (e > 0.001) drawIconAndLabel(ctx, seg.step, w, h, e, dy, showText);
+    } else if (prevSeg && prevSeg.step.type === 'note' && seg.slideMs > 0 && localMs < seg.slideMs) {
+      // インターバル等へ切り替わる間、直前のアイコンを背景に合わせて消す
+      const o = 1 - easeFade(localMs / seg.slideMs);
+      if (o > 0.001) drawIconAndLabel(ctx, prevSeg.step, w, h, o, 0, showText);
     }
   }
 
@@ -1900,11 +1978,12 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // 同音は音が移動していないので、虹彩の流れは出さず静かな暗転にする
     const t = clamp01(localMs / seg.durMs);
     const eIris = easeIris(t);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.5 * IRIS_SCALE;
+    ctx.globalAlpha = iv.st === 0 ? 0 : 0.5 * IRIS_SCALE;
     const travel = h * 1.3;
     const irisY = seg.up ? (1 - eIris * 2) * travel : (eIris * 2 - 1) * travel;
     const irisGrad = ctx.createLinearGradient(0, irisY - h * 0.5, 0, irisY + h * 0.5);
@@ -1979,8 +2058,8 @@
     if (!bars.length) return;
     let bar = bars[0];
     for (const b of bars) { if (elapsedMs >= b.start) bar = b; }
-    const pct = clamp01((elapsedMs - bar.start) / bar.total);
-    const trackW = EXPORT_W * 0.62, trackH = 4 * EXPORT_SCALE;
+    const pct = barPct({ onset: bar.start, cycles: bar.cycles }, elapsedMs) / 100;
+    const trackW = EXPORT_W * 0.9, trackH = 4 * EXPORT_SCALE;
     const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 60 * EXPORT_SCALE;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
@@ -2003,7 +2082,7 @@
       const p = easeSlide(raw);
       ctx.save();
       if (seg.isUnison && seg.step.type !== 'blank') {
-        // ユニゾン（ホワイトアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
+        // ユニゾン（ブラックアウト）：向きを持たせず、前のパネルの上に次のパネルを溶かし込む
         const pf = easeFade(raw);
         drawPanel(ctx, prevSeg, prevSeg.durMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
         const layer = getExportFadeLayer();
@@ -2033,6 +2112,7 @@
     } else {
       drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
     }
+    drawIconLayer(ctx, seg, prevSeg, localMs, EXPORT_W, EXPORT_H, showText);
     drawProgressBarExport(ctx, clampedElapsed, bars);
   }
 
@@ -2174,7 +2254,9 @@
     runExport();
   });
 
+  progressFill.style.transition = 'none';
+  requestAnimationFrame(tickProgressBar);
   resetStage(0);
-  beginStep();
+  beginStep(true, firstToneDelay());
 })();
 </script>
