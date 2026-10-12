@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <div id="app-root"></div>
 <style>
   #app-root {
@@ -46,6 +47,7 @@
     width: var(--stage-w);
     max-width: 88vw;
     aspect-ratio: 390 / 844;
+    container-type: inline-size; /* アイコンの大きさをステージ幅基準(cqw)にするため */
     position: relative;
     overflow: hidden;
     border-radius: 34px;
@@ -627,20 +629,22 @@
     const innerLarge = x > off ? 1 : 0;
     return `M${tipX} ${(50 - y).toFixed(2)} A${R} ${R} 0 1 0 ${tipX} ${(50 + y).toFixed(2)} A${r} ${r} 0 ${innerLarge} 1 ${tipX} ${(50 - y).toFixed(2)} Z`;
   }
-  const GLYPH_SIZE = 120;
+  // アイコン（図形）の箱は「画面（ステージ）幅の40%」。画面と書き出しで同じ比率にし、端末の幅にも依存させない
+  const GLYPH_BOX_RATIO = 0.40;
   const GLYPH_PATHS = {
-    star:      starPath(44, 0.46),
-    rect:      'M14 35 H86 A5 5 0 0 1 91 40 V60 A5 5 0 0 1 86 65 H14 A5 5 0 0 1 9 60 V40 A5 5 0 0 1 14 35 Z',
-    triangle:  'M50 15 L90 85 L10 85 Z',
-    square:    'M18 18 H82 V82 H18 Z',
-    circle:    'M12 50 A38 38 0 1 0 88 50 A38 38 0 1 0 12 50 Z',
-    diamond:   'M50 10 L90 50 L50 90 L10 50 Z',
-    moonThick: crescentPath(40, 30, 20),
-    moonThin:  crescentPath(40, 36, 16),
+    star:      starPath(45, 0.46),
+    rect:      'M15 27 H85 A8 8 0 0 1 93 35 V65 A8 8 0 0 1 85 73 H15 A8 8 0 0 1 7 65 V35 A8 8 0 0 1 15 27 Z',
+    triangle:  'M50 14 L91 86 L9 86 Z',
+    square:    'M16 16 H84 V84 H16 Z',
+    circle:    'M10 50 A40 40 0 1 0 90 50 A40 40 0 1 0 10 50 Z',
+    diamond:   'M50 8 L92 50 L50 92 L8 50 Z',
+    moonThick: crescentPath(42, 31, 21),
+    moonThin:  crescentPath(42, 38, 17),
   };
   function glyphSVG(shape, filled, color) {
     const fill = filled ? color : 'none';
-    return `<svg width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" viewBox="0 0 100 100">`
+    const box = (GLYPH_BOX_RATIO * 100).toFixed(1) + 'cqw';
+    return `<svg width="120" height="120" viewBox="0 0 100 100" style="width:${box};height:${box}">`
       + `<path d="${GLYPH_PATHS[shape] || ''}" fill="${fill}" stroke="${color}" stroke-width="7" stroke-linejoin="round"/></svg>`;
   }
 
@@ -905,7 +909,7 @@
       </div>
       <div>
         <label id="ratioLabel">音:インターバル比率：4:1（500ms / 125ms）</label>
-        <input type="range" id="ratioRange" min="0" max="4" step="1" value="2" />
+        <input type="range" id="ratioRange" min="0" max="5" step="1" value="2" />
       </div>
       <div>
         <label id="irisLabel">虹彩アニメーションの強さ：100%</label>
@@ -942,7 +946,7 @@
             <span class="track"><span class="knob"></span></span>
           </label>
         </div>
-        <div class="export-status" id="exportStatus">現在のフレーズを1回分、書き出します。</div>
+        <div class="export-status" id="exportStatus">現在のフレーズを1回分、書き出します（1080×1920・60fps・高画質）。</div>
         <div class="export-progress-track"><div class="export-progress-fill" id="exportProgressFill"></div></div>
         <div class="export-buttons">
           <button class="export-btn secondary" id="exportCancelBtn">キャンセル</button>
@@ -995,7 +999,7 @@
 
   // 音・インターバルの表示時間はBPMの1拍（60000/bpm ms）から導出し、
   // 両者の比率だけをプリセット（16:1〜1:1）で選ぶ形にする
-  const RATIO_PRESETS = [16, 8, 4, 2, 1];
+  const RATIO_PRESETS = [16, 8, 4, 2, 1, 0.5];
   let ratioIndex = 2; // デフォルト 4:1
   function beatMs() { return 60000 / bpm; }
   // 音+インターバルの合計（1拍分）を固定し、比率でその内訳を分割する
@@ -1609,7 +1613,10 @@
   // 動画書き出し（DOM/CSSの見た目をCanvasに再描画してMediaRecorderで録画）
   // ============================================================
   const EXPORT_W = 1080, EXPORT_H = 1920;
-  const EXPORT_SCALE = EXPORT_W / 390;
+  // 画面のステージ幅(--stage-w:300px)を基準にして、画面と同じ比率で拡大する（390基準だと約77%の大きさに見えていた）
+  const STAGE_BASE_W = 300;
+  const EXPORT_SCALE = EXPORT_W / STAGE_BASE_W;
+  const EXPORT_FONT = "'Hiragino Maru Gothic ProN', 'Yu Gothic', 'Rounded Mplus 1c', 'Zen Maru Gothic', sans-serif";
 
   function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
@@ -1924,18 +1931,32 @@
   }
 
   // アイコン＋度数ラベルを画面中央に固定して描く（背景パネルのスライドとは独立）
+  // 画面（.icon-layer / .icon-stack）と同じ構成：アイコンの箱はステージ幅の40%、その下に14pxの間隔で度数ラベル、
+  // ラベルを含めた全体を画面の縦中央に置く（ラベル非表示ならアイコンだけを中央に置く）
   function drawIconAndLabel(ctx, step, w, h, opacity, dy, showText) {
     const d = DEG[step.key];
-    const iconSize = GLYPH_SIZE * EXPORT_SCALE;
-    const iconCenterY = h * 0.44;
+    const iconSize = w * GLYPH_BOX_RATIO;
+    const gap = 14 * EXPORT_SCALE;
+    const labelH = 26 * 1.2 * EXPORT_SCALE;
+    const iconCenterY = showText ? h / 2 - (gap + labelH) / 2 : h / 2;
+    // 画面の drop-shadow(0 2px 8px rgba(0,0,0,.4)) に相当
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 8 * EXPORT_SCALE;
+    ctx.shadowOffsetY = 2 * EXPORT_SCALE;
     drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, opacity, dy);
+    ctx.restore();
     if (!showText) return;
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.fillStyle = '#F3F6FF';
-    ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+    // 画面の text-shadow(0 2px 14px rgba(0,0,0,.5)) に相当
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 14 * EXPORT_SCALE;
+    ctx.shadowOffsetY = 2 * EXPORT_SCALE;
+    ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
     ctx.textBaseline = 'middle';
-    const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE + dy;
+    const labelY = iconCenterY + iconSize / 2 + gap + labelH / 2 + dy;
     const oct = octLabel(step.oct);
     if (!oct) {
       ctx.textAlign = 'center';
@@ -1943,17 +1964,17 @@
     } else {
       // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
       const keyW = ctx.measureText(step.key).width;
-      const gap = 8 * EXPORT_SCALE;
-      const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
+      const bgap = 8 * EXPORT_SCALE;
+      const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.font = badgeFont;
       const badgeW = ctx.measureText(oct).width;
-      const startX = w / 2 - (keyW + gap + badgeW) / 2;
+      const startX = w / 2 - (keyW + bgap + badgeW) / 2;
       ctx.textAlign = 'left';
-      ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.fillText(step.key, startX, labelY);
       ctx.font = badgeFont;
       ctx.globalAlpha = opacity * 0.8;
-      ctx.fillText(oct, startX + keyW + gap, labelY);
+      ctx.fillText(oct, startX + keyW + bgap, labelY);
     }
     ctx.restore();
   }
@@ -2004,14 +2025,14 @@
       ctx.save();
       ctx.fillStyle = iv.text;
       ctx.globalAlpha = 0.75;
-      ctx.font = `${Math.round(11 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `${Math.round(11 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
       ctx.fillText(iv.st === 0 ? '＝ 同音' : (seg.step.up ? '▲ 上昇' : '▼ 下降'), w - 20 * EXPORT_SCALE, 18 * EXPORT_SCALE);
       ctx.restore();
 
       ctx.save();
-      ctx.font = `800 ${Math.round(122 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `800 ${Math.round(122 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.fillStyle = iv.text === '#fff' ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -2025,19 +2046,19 @@
       ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = iv.text;
       ctx.globalAlpha = 0.65;
-      ctx.font = `${Math.round(12 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `${Math.round(12 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.fillText('半音', padX, ty);
       ty += 12 * EXPORT_SCALE + 21 * EXPORT_SCALE;
       ctx.globalAlpha = 1;
-      ctx.font = `800 ${Math.round(21 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `800 ${Math.round(21 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.fillText(iv.name, padX, ty);
       ty += 6 * EXPORT_SCALE + 13 * EXPORT_SCALE;
       ctx.globalAlpha = 0.9;
-      ctx.font = `700 ${Math.round(13 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `700 ${Math.round(13 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       ctx.fillText(iv.colorName, padX, ty);
       ty += 10 * EXPORT_SCALE + 10.5 * EXPORT_SCALE;
       ctx.globalAlpha = 0.6;
-      ctx.font = `${Math.round(10.5 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = `${Math.round(10.5 * EXPORT_SCALE)}px ${EXPORT_FONT}`;
       wrapTextJa(ctx, iv.nuance, padX, ty, w - padX * 2, 17 * EXPORT_SCALE);
       ctx.restore();
     }
@@ -2060,7 +2081,7 @@
     for (const b of bars) { if (elapsedMs >= b.start) bar = b; }
     const pct = barPct({ onset: bar.start, cycles: bar.cycles }, elapsedMs) / 100;
     const trackW = EXPORT_W * 0.9, trackH = 4 * EXPORT_SCALE;
-    const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 60 * EXPORT_SCALE;
+    const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 22 * EXPORT_SCALE - trackH;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     roundRectPath(ctx, tx, ty, trackW, trackH, trackH / 2); ctx.fill();
@@ -2120,6 +2141,11 @@
   let exporting = false;
   let exportCancelRequested = false;
 
+  // 書き出しの画質設定：画面と同じ60fps、約16Mbps（H.264 High L4.2）、音声はAAC 192kbps
+  const EXPORT_FPS = 60;
+  const EXPORT_VIDEO_BPS = 16000000;
+  const EXPORT_AUDIO_RATE = 48000;
+
   function scheduleExportTone(audioCtxExp, dest, semitone, atSec, durSec) {
     const freq = 261.63 * Math.pow(2, semitone / 12);
     const osc = audioCtxExp.createOscillator();
@@ -2133,102 +2159,331 @@
     osc.start(atSec); osc.stop(atSec + durSec + 0.05);
   }
 
+  // ----- MP4（H.264 + AAC）の簡易マルチプレクサ -----
+  // WebCodecsでエンコードしたチャンクを、そのまま再生・アップロードできる.mp4にまとめる（moovを先頭に置く）
+  function mpConcat(parts) {
+    let n = 0; for (const p of parts) n += p.length;
+    const out = new Uint8Array(n); let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+  function mpU32(v) { return new Uint8Array([(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255]); }
+  function mpU16(v) { return new Uint8Array([(v >>> 8) & 255, v & 255]); }
+  function mpStr(str) { return new Uint8Array(Array.from(str).map(c => c.charCodeAt(0))); }
+  function mpZeros(n) { return new Uint8Array(n); }
+  function mpU32s(arr) {
+    const out = new Uint8Array(arr.length * 4); const dv = new DataView(out.buffer);
+    for (let i = 0; i < arr.length; i++) dv.setUint32(i * 4, arr[i] >>> 0);
+    return out;
+  }
+  function mpBox(type, ...parts) {
+    const body = mpConcat(parts);
+    return mpConcat([mpU32(body.length + 8), mpStr(type), body]);
+  }
+  function mpFull(type, version, flags, ...parts) {
+    return mpBox(type, new Uint8Array([version, (flags >>> 16) & 255, (flags >>> 8) & 255, flags & 255]), ...parts);
+  }
+  const MP_MATRIX = mpU32s([0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000]);
+
+  function mpStbl(entry, samples, withKeys) {
+    const runs = [];
+    for (const s of samples) {
+      const last = runs[runs.length - 1];
+      if (last && last[1] === s.dur) last[0]++; else runs.push([1, s.dur]);
+    }
+    const sttsData = []; runs.forEach(r => sttsData.push(r[0], r[1]));
+    const parts = [
+      mpFull('stsd', 0, 0, mpU32(1), entry),
+      mpFull('stts', 0, 0, mpU32(runs.length), mpU32s(sttsData)),
+    ];
+    if (withKeys) {
+      const keys = []; samples.forEach((s, i) => { if (s.key) keys.push(i + 1); });
+      parts.push(mpFull('stss', 0, 0, mpU32(keys.length), mpU32s(keys)));
+    }
+    parts.push(mpFull('stsc', 0, 0, mpU32(1), mpU32s([1, 1, 1])));
+    parts.push(mpFull('stsz', 0, 0, mpU32(0), mpU32(samples.length), mpU32s(samples.map(s => s.size))));
+    parts.push(mpFull('stco', 0, 0, mpU32(samples.length), mpU32s(samples.map(s => s.offset))));
+    return mpBox('stbl', ...parts);
+  }
+
+  function mpTrack(id, kind, timescale, movieDurMs, w, h, entry, samples) {
+    const isVideo = kind === 'vide';
+    let ticks = 0; for (const s of samples) ticks += s.dur;
+    const tkhd = mpFull('tkhd', 0, 7, mpU32(0), mpU32(0), mpU32(id), mpU32(0), mpU32(movieDurMs),
+      mpZeros(8), mpU16(0), mpU16(0), mpU16(isVideo ? 0 : 0x0100), mpU16(0), MP_MATRIX,
+      mpU32(isVideo ? (w << 16) : 0), mpU32(isVideo ? (h << 16) : 0));
+    const mdhd = mpFull('mdhd', 0, 0, mpU32(0), mpU32(0), mpU32(timescale), mpU32(ticks), mpU16(0x55c4), mpU16(0));
+    const hdlr = mpFull('hdlr', 0, 0, mpU32(0), mpStr(kind), mpZeros(12), mpStr(isVideo ? 'VideoHandler' : 'SoundHandler'), mpZeros(1));
+    const media = isVideo ? mpFull('vmhd', 0, 1, mpZeros(8)) : mpFull('smhd', 0, 0, mpZeros(4));
+    const dinf = mpBox('dinf', mpFull('dref', 0, 0, mpU32(1), mpFull('url ', 0, 1)));
+    const minf = mpBox('minf', media, dinf, mpStbl(entry, samples, isVideo));
+    return mpBox('trak', tkhd, mpBox('mdia', mdhd, hdlr, minf));
+  }
+
+  function mpAvc1(w, h, avcC) {
+    return mpBox('avc1', mpZeros(6), mpU16(1), mpU16(0), mpU16(0), mpZeros(12), mpU16(w), mpU16(h),
+      mpU32(0x00480000), mpU32(0x00480000), mpU32(0), mpU16(1), mpZeros(32), mpU16(0x0018), mpU16(0xffff),
+      mpBox('avcC', avcC));
+  }
+  function mpMp4a(channels, sampleRate, asc, bitrate) {
+    const dsi = mpConcat([new Uint8Array([0x05, asc.length]), asc]);
+    const dcd = mpConcat([new Uint8Array([0x04, 13 + dsi.length, 0x40, 0x15, 0, 0, 0]), mpU32(bitrate), mpU32(bitrate), dsi]);
+    const slc = new Uint8Array([0x06, 0x01, 0x02]);
+    const esBody = mpConcat([mpU16(1), new Uint8Array([0]), dcd, slc]);
+    const es = mpConcat([new Uint8Array([0x03, esBody.length]), esBody]);
+    return mpBox('mp4a', mpZeros(6), mpU16(1), mpZeros(8), mpU16(channels), mpU16(16), mpU16(0), mpU16(0),
+      mpU32(sampleRate * 65536), mpFull('esds', 0, 0, es));
+  }
+
+  // video: { width, height, fps, samples:[{data, ts(us), key}], avcC }
+  // audio: { sampleRate, channels, samples:[{data, ts(us)}], asc, bitrate } | null
+  function mpBuild(video, audio) {
+    const vTimescale = video.fps * 100;
+    const vMeta = video.samples.map(s => ({ size: s.data.length, dur: 100, key: s.key, offset: 0 }));
+    const aMeta = audio ? audio.samples.map(s => ({ size: s.data.length, dur: 1024, offset: 0 })) : [];
+    const vDurMs = Math.round(video.samples.length * 1000 / video.fps);
+    const aDurMs = audio ? Math.round(aMeta.length * 1024 * 1000 / audio.sampleRate) : 0;
+    const movieDurMs = Math.max(vDurMs, aDurMs);
+
+    const ftyp = mpBox('ftyp', mpStr('isom'), mpU32(0x200), mpStr('isom'), mpStr('iso2'), mpStr('avc1'), mpStr('mp41'));
+    const build = () => {
+      const mvhd = mpFull('mvhd', 0, 0, mpU32(0), mpU32(0), mpU32(1000), mpU32(movieDurMs), mpU32(0x00010000),
+        mpU16(0x0100), mpU16(0), mpZeros(8), MP_MATRIX, mpZeros(24), mpU32(audio ? 3 : 2));
+      const parts = [mvhd, mpTrack(1, 'vide', vTimescale, movieDurMs, video.width, video.height, mpAvc1(video.width, video.height, video.avcC), vMeta)];
+      if (audio) parts.push(mpTrack(2, 'soun', audio.sampleRate, movieDurMs, 0, 0, mpMp4a(audio.channels, audio.sampleRate, audio.asc, audio.bitrate), aMeta));
+      return mpBox('moov', ...parts);
+    };
+    // 時刻順にインターリーブ（同時刻は映像を先に）。moovの大きさはオフセット値に依らないので2回組み立てる
+    const items = [];
+    video.samples.forEach((s, i) => items.push({ t: s.ts, k: 0, i }));
+    if (audio) audio.samples.forEach((s, i) => items.push({ t: s.ts, k: 1, i }));
+    items.sort((a, b) => a.t - b.t || a.k - b.k);
+    const moovSize = build().length;
+    let pos = ftyp.length + moovSize + 8;
+    for (const it of items) {
+      const meta = it.k === 0 ? vMeta[it.i] : aMeta[it.i];
+      meta.offset = pos; pos += meta.size;
+    }
+    const moov = build();
+    const dataLen = pos - (ftyp.length + moovSize + 8);
+    const out = [ftyp, moov, mpConcat([mpU32(dataLen + 8), mpStr('mdat')])];
+    for (const it of items) out.push(it.k === 0 ? video.samples[it.i].data : audio.samples[it.i].data);
+    return new Blob(out, { type: 'video/mp4' });
+  }
+
+  // ----- 高画質書き出し（WebCodecs）：1フレームずつ描画→エンコード。リアルタイム録画ではないのでコマ落ちしない -----
+  // 対応していない環境では null を返す（呼び出し側で従来方式へフォールバック）
+  async function exportWithWebCodecs(o) {
+    if (typeof VideoEncoder !== 'function' || typeof VideoFrame !== 'function') return null;
+    const W = EXPORT_W, H = EXPORT_H, fps = EXPORT_FPS;
+    const vCfg = { codec: 'avc1.64002a', width: W, height: H, bitrate: EXPORT_VIDEO_BPS, framerate: fps,
+      latencyMode: 'quality', bitrateMode: 'variable', avc: { format: 'avc' } };
+    const vSup = await VideoEncoder.isConfigSupported(vCfg);
+    if (!vSup.supported) return null;
+    const aCfg = { codec: 'mp4a.40.2', sampleRate: EXPORT_AUDIO_RATE, numberOfChannels: 2, bitrate: 192000 };
+    if (o.includeAudio) {
+      if (typeof AudioEncoder !== 'function' || typeof AudioData !== 'function' || typeof OfflineAudioContext !== 'function') return null;
+      const aSup = await AudioEncoder.isConfigSupported(aCfg);
+      if (!aSup.supported) return null;
+    }
+
+    let encError = null;
+    const toBytes = (d) => ArrayBuffer.isView(d)
+      ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength).slice()
+      : new Uint8Array(d.slice(0));
+    const vSamples = []; let avcC = null;
+    const venc = new VideoEncoder({
+      output: (chunk, meta) => {
+        const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data);
+        vSamples.push({ data, ts: chunk.timestamp, key: chunk.type === 'key' });
+        if (!avcC && meta && meta.decoderConfig && meta.decoderConfig.description) avcC = toBytes(meta.decoderConfig.description);
+      },
+      error: (e) => { encError = e; },
+    });
+    venc.configure(vCfg);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const nFrames = Math.max(1, Math.ceil(o.totalMs / 1000 * fps));
+    const cleanup = () => { try { venc.close(); } catch (e) {} };
+
+    for (let i = 0; i < nFrames; i++) {
+      if (o.isCancelled()) { cleanup(); return { cancelled: true }; }
+      if (encError) { cleanup(); throw encError; }
+      drawExportFrame(ctx, i * 1000 / fps, o.segs, o.bars, o.showText);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+      // エンコーダの待ち行列が溜まりすぎないようにする＋画面の更新・キャンセル操作に譲る
+      while (venc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 0));
+      if (i % 4 === 0) {
+        o.onProgress((i / nFrames) * 85);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    await venc.flush();
+    cleanup();
+    if (encError) throw encError;
+    if (!avcC) throw new Error('avcC not produced');
+
+    let audio = null;
+    if (o.includeAudio) {
+      o.onProgress(86);
+      const sr = EXPORT_AUDIO_RATE;
+      const len = Math.ceil((o.totalMs / 1000 + 0.15) * sr);
+      const off = new OfflineAudioContext(2, len, sr);
+      for (const seg of o.segs) {
+        if (seg.step.type !== 'note') continue;
+        scheduleExportTone(off, off.destination, noteSemitone(seg.step),
+          (seg.startMs + seg.toneDelay) / 1000, (seg.durMs / 1000) * 0.92);
+      }
+      const buf = await off.startRendering();
+      const L = buf.getChannelData(0), R = buf.getChannelData(1);
+      const aSamples = []; let asc = null; let aErr = null;
+      const aenc = new AudioEncoder({
+        output: (chunk, meta) => {
+          const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data);
+          aSamples.push({ data, ts: chunk.timestamp });
+          if (!asc && meta && meta.decoderConfig && meta.decoderConfig.description) asc = toBytes(meta.decoderConfig.description);
+        },
+        error: (e) => { aErr = e; },
+      });
+      aenc.configure(aCfg);
+      const BLOCK = 4800;
+      for (let pos = 0; pos < len; pos += BLOCK) {
+        const n = Math.min(BLOCK, len - pos);
+        const planar = new Float32Array(n * 2);
+        planar.set(L.subarray(pos, pos + n), 0);
+        planar.set(R.subarray(pos, pos + n), n);
+        const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: 2,
+          timestamp: Math.round(pos / sr * 1e6), data: planar });
+        aenc.encode(ad); ad.close();
+      }
+      await aenc.flush();
+      try { aenc.close(); } catch (e) {}
+      if (aErr) throw aErr;
+      // AAC-LCのAudioSpecificConfigが得られなければ、標準値(48kHz・2ch)を使う
+      if (!asc) asc = new Uint8Array([0x11, 0x90]);
+      audio = { sampleRate: sr, channels: 2, samples: aSamples, asc, bitrate: aCfg.bitrate };
+    }
+
+    o.onProgress(96);
+    const blob = mpBuild({ width: W, height: H, fps, samples: vSamples, avcC }, audio);
+    o.onProgress(100);
+    return { blob, ext: 'mp4', mime: 'video/mp4', quality: 'high' };
+  }
+
+  // ----- 従来方式（リアルタイム録画）：WebCodecs非対応のブラウザ向けフォールバック -----
+  async function exportWithMediaRecorder(o) {
+    if (typeof MediaRecorder !== 'function') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = EXPORT_W; canvas.height = EXPORT_H;
+    const ctx = canvas.getContext('2d');
+
+    const fps = EXPORT_FPS;
+    const videoStream = canvas.captureStream(fps);
+    let exportAudioCtx = null, audioDest = null;
+    let combinedStream = videoStream;
+    if (o.includeAudio) {
+      exportAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioDest = exportAudioCtx.createMediaStreamDestination();
+      combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]);
+    }
+    const candidates = [
+      'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4',
+      'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
+    ];
+    const mimeType = candidates.find(c => MediaRecorder.isTypeSupported(c)) || '';
+    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType, videoBitsPerSecond: EXPORT_VIDEO_BPS } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    const donePromise = new Promise((resolve) => { recorder.onstop = resolve; });
+
+    recorder.start(200);
+    const startTs = performance.now();
+    if (o.includeAudio) {
+      const audioBase = exportAudioCtx.currentTime + 0.05;
+      for (const seg of o.segs) {
+        if (seg.step.type !== 'note') continue;
+        scheduleExportTone(exportAudioCtx, audioDest, noteSemitone(seg.step),
+          audioBase + (seg.startMs + seg.toneDelay) / 1000, (seg.durMs / 1000) * 0.92);
+      }
+    }
+    await new Promise((resolveFrame) => {
+      function frame() {
+        if (o.isCancelled()) { resolveFrame(); return; }
+        const elapsed = performance.now() - startTs;
+        drawExportFrame(ctx, elapsed, o.segs, o.bars, o.showText);
+        o.onProgress(Math.min(100, (elapsed / o.totalMs) * 100));
+        if (elapsed >= o.totalMs) { resolveFrame(); return; }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    });
+    recorder.stop();
+    await donePromise;
+    if (exportAudioCtx) exportAudioCtx.close();
+    if (o.isCancelled()) return { cancelled: true };
+    if (!chunks.length) return null;
+    const usingMp4 = mimeType.startsWith('video/mp4');
+    return { blob: new Blob(chunks, { type: mimeType || 'video/webm' }), ext: usingMp4 ? 'mp4' : 'webm',
+      mime: mimeType || 'video/webm', quality: 'realtime' };
+  }
+
   async function runExport() {
     if (exporting) return;
     exporting = true;
     exportCancelRequested = false;
     exportStartBtn.disabled = true;
 
-    const includeAudio = exportAudioToggle.checked;
-    const showText = exportIvTextToggle.checked;
-
     const { segs, totalMs } = computeExportTimeline();
     exportParticleCache.clear();
     exportStarfield = null;
     exportGlassCanvas = null;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = EXPORT_W; canvas.height = EXPORT_H;
-    const ctx = canvas.getContext('2d');
-
-    const fps = 30;
-    const videoStream = canvas.captureStream(fps);
-    let exportAudioCtx = null, audioDest = null;
-    let combinedStream = videoStream;
-    if (includeAudio) {
-      exportAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioDest = exportAudioCtx.createMediaStreamDestination();
-      combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]);
-    }
-
-    const candidates = [
-      'video/mp4;codecs=avc1,mp4a.40.2',
-      'video/mp4;codecs=avc1',
-      'video/mp4',
-      'video/webm;codecs=vp9,opus',
-      'video/webm;codecs=vp8,opus',
-      'video/webm',
-    ];
-    const mimeType = candidates.find(c => window.MediaRecorder && MediaRecorder.isTypeSupported(c)) || '';
-    const usingMp4 = mimeType.startsWith('video/mp4');
-
-    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType, videoBitsPerSecond: 8000000 } : undefined);
-    const chunks = [];
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    const donePromise = new Promise((resolve) => { recorder.onstop = resolve; });
-
-    const bars = computeBars(segs);
-
-    recorder.start(200);
-    const startTs = performance.now();
-
-    if (includeAudio) {
-      const audioBase = exportAudioCtx.currentTime + 0.05;
-      for (let i = 0; i < segs.length; i++) {
-        const seg = segs[i];
-        if (seg.step.type !== 'note') continue;
-        const atSec = audioBase + (seg.startMs + seg.toneDelay) / 1000;
-        const durSec = (seg.durMs / 1000) * 0.92;
-        scheduleExportTone(exportAudioCtx, audioDest, noteSemitone(seg.step), atSec, durSec);
-      }
-    }
-
-    await new Promise((resolveFrame) => {
-      function frame() {
-        if (exportCancelRequested) { resolveFrame(); return; }
-        const elapsed = performance.now() - startTs;
-        drawExportFrame(ctx, elapsed, segs, bars, showText);
-        const pct = Math.min(100, (elapsed / totalMs) * 100);
+    let label = '';
+    const opts = {
+      segs, totalMs, bars: computeBars(segs),
+      includeAudio: exportAudioToggle.checked,
+      showText: exportIvTextToggle.checked,
+      isCancelled: () => exportCancelRequested,
+      onProgress: (pct) => {
         exportProgressFill.style.width = pct + '%';
-        exportStatus.textContent = `書き出し中… ${Math.min(100, Math.round(pct))}%`;
-        if (elapsed >= totalMs) { resolveFrame(); return; }
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-    });
+        exportStatus.textContent = `書き出し中… ${Math.min(100, Math.round(pct))}%${label}`;
+      },
+    };
 
-    recorder.stop();
-    await donePromise;
-    if (exportAudioCtx) exportAudioCtx.close();
+    let result = null;
+    try {
+      label = '（高画質エンコード）';
+      result = await exportWithWebCodecs(opts);
+    } catch (e) {
+      console.warn('WebCodecs書き出しに失敗したため、従来方式に切り替えます', e);
+      result = null;
+    }
+    if (!result && !exportCancelRequested) {
+      label = '（リアルタイム録画）';
+      try { result = await exportWithMediaRecorder(opts); } catch (e) { console.warn(e); result = null; }
+    }
 
-    if (!exportCancelRequested && chunks.length) {
-      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
-      const ext = usingMp4 ? 'mp4' : 'webm';
-      const url = URL.createObjectURL(blob);
+    if (result && result.cancelled || exportCancelRequested) {
+      exportStatus.textContent = 'キャンセルしました。';
+    } else if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `interval-map-${Date.now()}.${ext}`;
+      a.download = `interval-map-${Date.now()}.${result.ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      exportStatus.textContent = usingMp4
-        ? '書き出し完了！MP4ファイルをダウンロードしました。'
-        : 'このブラウザはMP4非対応のため、.webm形式で書き出しました。';
-    } else if (exportCancelRequested) {
-      exportStatus.textContent = 'キャンセルしました。';
+      const mb = (result.blob.size / 1048576).toFixed(1);
+      if (result.ext !== 'mp4') exportStatus.textContent = 'このブラウザはMP4非対応のため、.webm形式で書き出しました。';
+      else if (result.quality === 'high') exportStatus.textContent = `書き出し完了！高画質MP4（1080×1920・${EXPORT_FPS}fps・${mb}MB）をダウンロードしました。`;
+      else exportStatus.textContent = `書き出し完了！MP4（簡易方式・${mb}MB）をダウンロードしました。`;
     } else {
-      exportStatus.textContent = '書き出しに失敗しました。ブラウザが動画の録画に対応していない可能性があります。';
+      exportStatus.textContent = '書き出しに失敗しました。ブラウザが動画の書き出しに対応していない可能性があります。';
     }
 
     exportProgressFill.style.width = '0%';
@@ -2239,7 +2494,7 @@
   exportOpenBtn.addEventListener('click', () => {
     exportAudioToggle.checked = audioEnabled;
     exportIvTextToggle.checked = ivTextToggle.checked;
-    exportStatus.textContent = '現在のフレーズを1回分、書き出します。';
+    exportStatus.textContent = '現在のフレーズを1回分、書き出します（1080×1920・60fps・高画質）。';
     exportProgressFill.style.width = '0%';
     exportModalBackdrop.classList.remove('hidden');
   });
