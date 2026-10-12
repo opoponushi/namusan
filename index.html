@@ -1161,6 +1161,13 @@
     return s.type === 'note' ? noteMs() * (1 + (s.hold || 0)) : leadMs();
   }
 
+  // フレーズの1音目も、2音目以降と同じだけ発音をステップ頭から遅らせる。
+  // 遅らせないと「1音目→2音目」の発音間隔だけ遅延分（約0.24秒）長くなり、1音目が長く聞こえる
+  function firstToneDelay() {
+    const slideMs = Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7);
+    return noteTiming(slideMs, durationOf(0)).toneDelay;
+  }
+
   function beginStep(withTone, toneDelayMs) {
     clearTimeout(stepTimer);
     clearTimeout(toneTimer);
@@ -1275,7 +1282,7 @@
       playing = true;
       playPauseBtn.textContent = '❚❚';
       resetStage(0);
-      beginStep();
+      beginStep(true, firstToneDelay());
       return;
     }
     playing = !playing;
@@ -1339,7 +1346,7 @@
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
     resetStage(0);
-    beginStep();
+    beginStep(true, firstToneDelay());
   });
 
   ivTextToggle.addEventListener('change', () => {
@@ -1412,7 +1419,7 @@
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
     resetStage(0);
-    beginStep();
+    beginStep(true, firstToneDelay());
   }
 
   function updateRowControls() {
@@ -1655,6 +1662,9 @@
           const nt = noteTiming(slideMs, durMs);
           toneDelay = nt.toneDelay; iconDelay = nt.iconDelay; iconDur = nt.iconDur;
         }
+      } else if (step.type === 'note') {
+        // 1音目：登場アニメーションは無いが、発音は2音目以降と同じ遅延に揃える（画面側 firstToneDelay と同じ式）
+        toneDelay = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), durMs).toneDelay;
       }
       const hasIconAnim = step.type === 'note' && i > 0 && !isUnison;
       segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, toneDelay, iconDelay, iconDur, index: i });
@@ -2175,6 +2185,6 @@
   });
 
   resetStage(0);
-  beginStep();
+  beginStep(true, firstToneDelay());
 })();
 </script>
