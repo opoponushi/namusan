@@ -342,7 +342,7 @@
 
   .bottom-zone { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 6; }
   .bottom-hideable { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; transition: opacity 200ms ease; }
-  .progress-track { width: 100%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
+  .progress-track { width: 90%; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.18); overflow: hidden; }
   .progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 999px; }
   .controls { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
   .controls-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; }
@@ -1034,6 +1034,7 @@
   let barTotalMs = 0;
   let barRemainingOnPause = null;
   let toneTimer = null; // アイコンのフェードイン完了に合わせて音を遅らせるためのタイマー
+  let barTimer = null;  // 進行バーを発音の瞬間から伸ばし始めるためのタイマー
 
   let currentPanel = null;
   let pending = null;      // { outgoing, incoming }
@@ -1146,6 +1147,11 @@
     progressFill.style.transition = `width ${durationMs}ms linear`;
     progressFill.style.width = '100%';
   }
+  function resetProgressBar() {
+    clearTimeout(barTimer);
+    progressFill.style.transition = 'none';
+    progressFill.style.width = '0%';
+  }
   function freezeProgressBar() {
     const rect = progressFill.getBoundingClientRect();
     const trackRect = progressFill.parentElement.getBoundingClientRect();
@@ -1177,9 +1183,10 @@
     stepStartTs = performance.now();
     remainingOnPause = null;
 
+    clearTimeout(barTimer);
     const s = steps[index];
+    const delay = s.type === 'note' ? Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6)) : 0;
     if (withTone !== false && s.type === 'note') {
-      const delay = Math.max(0, Math.min(toneDelayMs || 0, stepDuration * 0.6));
       if (delay > 0) {
         toneTimer = setTimeout(() => playTone(noteSemitone(s), (stepDuration / 1000) * 0.92), delay);
       } else {
@@ -1187,17 +1194,21 @@
       }
     }
     if (s.type === 'note') {
-      // ノーツの進行バーは、続くインターバル分（最後のノーツ→リピートの黒画面も含む）を
-      // 合わせた長さで1本につなげて表示する
+      // 進行バーは「発音の瞬間に左端から伸び始め、次のノーツの発音で右端に届く」1本にする
+      // （続くインターバル分も含む。発音は画面の切り替わりより遅れるので、バーも発音に合わせて遅らせて開始する）
       const nextIdx = (index + 1) % steps.length;
       const intervalMs = nextIdx === 0
-        ? leadMs() // 次がリピート：通常のインターバルと同じ長さ（最後のノーツも1拍=ノート＋インターバル）
+        ? (loopEnabled ? leadMs() : -delay) // ループOFFの最後のノーツは、再生が止まる瞬間に右端へ届くようにする
         : (steps[nextIdx].type === 'interval' ? durationOf(nextIdx) : 0);
       barTotalMs = stepDuration + intervalMs;
-      barStartTs = stepStartTs;
-      startProgressBar(barTotalMs);
+      barStartTs = stepStartTs + delay;
+      if (delay > 0) {
+        barTimer = setTimeout(() => startProgressBar(barTotalMs), delay);
+      } else {
+        startProgressBar(barTotalMs);
+      }
     }
-    // インターバル中は何もしない：ノーツ開始時に張ったバーをそのまま継続させる
+    // インターバル中は何もしない：発音時に張ったバーをそのまま継続させる
 
     if (playing) {
       stepTimerCallback = onStepEnd;
@@ -1263,6 +1274,7 @@
   function resetStage(startIndex) {
     clearTimeout(stepTimer);
     clearTimeout(toneTimer);
+    clearTimeout(barTimer);
     finalizeSlide();
     steps = buildSteps(PHRASE, PHRASE_HOLDS);
     index = startIndex || 0;
@@ -1288,6 +1300,7 @@
       phraseFinished = false;
       playing = true;
       playPauseBtn.textContent = '❚❚';
+      resetProgressBar();
       resetStage(0);
       beginStep(true, firstToneDelay());
       return;
@@ -1296,8 +1309,8 @@
     playPauseBtn.textContent = playing ? '❚❚' : '▶';
     if (playing) {
       const remaining = remainingOnPause != null ? remainingOnPause : stepDuration;
-      const barRemaining = barRemainingOnPause != null ? barRemainingOnPause : (barTotalMs - (performance.now() - barStartTs));
-      const pct = 100 - (barRemaining / barTotalMs) * 100;
+      const barRemaining = barRemainingOnPause != null ? barRemainingOnPause : Math.min(barTotalMs - (performance.now() - barStartTs), barTotalMs);
+      const pct = Math.max(0, 100 - (barRemaining / barTotalMs) * 100);
       startProgressBar(barRemaining, pct);
       stepTimer = setTimeout(stepTimerCallback, remaining);
       stepStartTs = performance.now() - (stepDuration - remaining);
@@ -1307,8 +1320,9 @@
     } else {
       clearTimeout(stepTimer);
       clearTimeout(toneTimer);
+      clearTimeout(barTimer);
       remainingOnPause = Math.max(stepDuration - (performance.now() - stepStartTs), 0);
-      barRemainingOnPause = Math.max(barTotalMs - (performance.now() - barStartTs), 0);
+      barRemainingOnPause = Math.min(Math.max(barTotalMs - (performance.now() - barStartTs), 0), barTotalMs);
       freezeProgressBar();
     }
   });
@@ -1352,6 +1366,7 @@
     playing = true;
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
     resetStage(0);
     beginStep(true, firstToneDelay());
   });
@@ -1425,6 +1440,7 @@
     playing = true;
     phraseFinished = false;
     playPauseBtn.textContent = '❚❚';
+    resetProgressBar();
     resetStage(0);
     beginStep(true, firstToneDelay());
   }
@@ -1693,8 +1709,10 @@
     for (let i = 0; i < segs.length; i++) {
       if (segs[i].step.type !== 'note') continue;
       const next = segs[i + 1];
-      const total = segs[i].durMs + (next && next.step.type === 'interval' ? next.durMs : 0);
-      bars.push({ start: segs[i].startMs, total });
+      // 発音の瞬間に左端から伸び始め、次のノーツの発音で右端に届く（最後は書き出しの終わりで右端）
+      const onset = segs[i].startMs + segs[i].toneDelay;
+      const total = next ? segs[i].durMs + (next.step.type === 'interval' ? next.durMs : 0) : segs[i].durMs - segs[i].toneDelay;
+      bars.push({ start: onset, total });
     }
     return bars;
   }
@@ -1998,7 +2016,7 @@
     let bar = bars[0];
     for (const b of bars) { if (elapsedMs >= b.start) bar = b; }
     const pct = clamp01((elapsedMs - bar.start) / bar.total);
-    const trackW = EXPORT_W, trackH = 4 * EXPORT_SCALE;
+    const trackW = EXPORT_W * 0.9, trackH = 4 * EXPORT_SCALE;
     const tx = (EXPORT_W - trackW) / 2, ty = EXPORT_H - 60 * EXPORT_SCALE;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
