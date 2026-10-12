@@ -290,28 +290,38 @@
     .iv-iris, .iv-spec, .iv-particle, .panel-interval .iv-num, .panel-interval .iv-text { animation: none !important; }
     .iv-iris { opacity: 0.35; }
     .iv-particles { display: none; }
-    .glyph-wrap.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .icon-stack.icon-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
   }
   .iv-dir { position: absolute; top: 18px; right: 20px; font-size: 11px; opacity: 0.75; letter-spacing: 0.04em; }
 
   .deg-label { font-size: 26px; font-weight: 800; color: #F3F6FF; letter-spacing: 0.04em; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
   .glyph-wrap { filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
+  /* アイコン＋度数ラベルは背景パネルのスライドから切り離し、画面中央に固定する */
+  .icon-layer {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .icon-stack { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 
   /* ===== 図形アイコンの登場アニメーション（パネル全体のスライドとは分離） =====
      パネルのスライドが完了するまではフェードイン前の状態で待機させ（animation-delay）、
      スライド完了後にアイコンだけが独立して動いて見えるようにする。
      上昇：基準点より約40px下からフェードインしながら上がってくる
      下降：その逆（上から下がってくる） */
-  .glyph-wrap.icon-enter {
+  .icon-stack.icon-enter {
     animation-duration: var(--icon-anim-dur, 260ms);
     animation-delay: var(--icon-anim-delay, 0ms);
     animation-timing-function: cubic-bezier(.22,.9,.32,1);
     animation-fill-mode: both;
   }
-  .glyph-wrap.icon-enter.up   { animation-name: iconEnterUp; }
-  .glyph-wrap.icon-enter.down { animation-name: iconEnterDown; }
-  @keyframes iconEnterUp   { from { transform: translateY(40px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  @keyframes iconEnterDown { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .icon-stack.icon-enter.up    { animation-name: iconEnterUp; }
+  .icon-stack.icon-enter.down  { animation-name: iconEnterDown; }
+  .icon-stack.icon-enter.still { animation-name: iconEnterStill; }
+  /* 位置は画面中央で固定のまま、直前の音からの動きの向きに16pxだけ寄せた位置からフェードインする */
+  @keyframes iconEnterUp    { from { transform: translateY(16px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterDown  { from { transform: translateY(-16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes iconEnterStill { from { opacity: 0; } to { opacity: 1; } }
 
   .chip {
     background: rgba(0,0,0,0.32);
@@ -739,6 +749,25 @@
   // 画面と動画書き出しで同じ値を使う
   // durMs には「タイを含まない基本のノーツ長（noteMs）」を渡す。タイで長いノーツでも発音位置は他と同じにして、
   // 発音間隔（拍）が偏らないようにする
+  // アイコン（＋度数ラベル）を画面中央に固定して表示する。背景パネルのスライドとは独立。
+  // iconDir: 'up'=下から上へ16px / 'down'=上から下へ16px / null=動きなしのフェードインのみ
+  function showIcon(step, iconDir, timing) {
+    const d = DEG[step.key];
+    const t = timing || { iconDelay: 0, iconDur: 160 };
+    const oct = octLabel(step.oct);
+    const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
+    iconLayer.style.transition = 'none';
+    iconLayer.style.opacity = '1';
+    iconLayer.innerHTML =
+      `<div class="icon-stack icon-enter ${iconDir || 'still'}" style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms">`
+      + `<div class="glyph-wrap">${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div>`
+      + `<div class="deg-label">${step.key}${badge}</div></div>`;
+  }
+  function hideIcon(ms) {
+    iconLayer.style.transition = `opacity ${Math.round(ms)}ms ease-out`;
+    iconLayer.style.opacity = '0';
+  }
+
   function noteTiming(slideMs, durMs) {
     const toneDelay = Math.max(0, Math.min(slideMs * 2, durMs * 0.6));
     const iconDur = Math.max(80, Math.min(slideMs, toneDelay * 0.6));
@@ -760,15 +789,8 @@
       return el;
     }
     if (step.type === 'note') {
-      const d = DEG[step.key];
+      // ノートパネルは背景（すりガラス）だけ。アイコンと度数ラベルは別レイヤー(showIcon)で中央に固定して出す
       el.className = 'panel panel-note';
-      // アイコンのフェードインは発音の瞬間に完了するよう、noteTimingで求めた遅延・長さを使う
-      const enterClass = iconDir ? ` icon-enter ${iconDir}` : '';
-      const t = timing || { iconDelay: 0, iconDur: 260 };
-      const enterStyle = iconDir ? ` style="--icon-anim-delay:${Math.round(t.iconDelay)}ms;--icon-anim-dur:${Math.round(t.iconDur)}ms"` : '';
-      const oct = octLabel(step.oct);
-      const badge = oct ? `<span class="oct-badge">${oct}</span>` : '';
-      el.innerHTML = `<div class="glyph-wrap${enterClass}"${enterStyle}>${glyphSVG(d.shape, d.filled, '#F3F6FF')}</div><div class="deg-label">${step.key}${badge}</div>`;
       return el;
     }
     const iv = step.iv;
@@ -836,6 +858,7 @@
     <div class="frame" id="frame">
       <div class="frame-bg" id="frameBg"></div>
       <div class="track" id="track"></div>
+      <div class="icon-layer" id="iconLayer"></div>
 
       <div class="bottom-zone" id="bottomZone">
         <div class="bottom-hideable" id="bottomHideable">
@@ -935,6 +958,7 @@
   const trackEl = document.getElementById('track');
   renderStarfield(document.getElementById('frameBg'));
   const frameEl = document.getElementById('frame');
+  const iconLayer = document.getElementById('iconLayer');
   const progressFill = document.getElementById('progressFill');
   const playPauseBtn = document.getElementById('playPause');
   const loopToggleBtn = document.getElementById('loopToggle');
@@ -1085,6 +1109,9 @@
     const iconDir = isUnison ? null : (up ? 'up' : 'down');
     const incoming = panelEl(step, stepMs, iconDir, timing);
     trackEl.style.transition = 'none';
+    // アイコンは背景のスライドに乗せず、ノーツなら中央で表示し直し、インターバル等なら背景に合わせて消す
+    if (step.type === 'note') showIcon(step, iconDir, timing);
+    else hideIcon(slideMs);
 
     if (isUnison && (step.type !== 'blank' || step.blackout)) {
       // 音高が変わらない（ユニゾン）遷移は向きを持たせず、暗転へ溶けるようにクロスフェードする（ブラックアウト）
@@ -1292,6 +1319,8 @@
     currentPanel = panelEl(first, durationOf(index), timing ? 'up' : null, timing);
     currentPanel.style.top = '0';
     trackEl.appendChild(currentPanel);
+    if (first.type === 'note') showIcon(first, 'up', timing);
+    else hideIcon(0);
     phraseChip.textContent = 'PHRASE — ' + PHRASE.map(n => n.key + octLabel(n.oct)).join(' ');
   }
 
@@ -1694,8 +1723,7 @@
         const nt0 = noteTiming(Math.min(SLIDE_BASE_MS / speedMultiplier, noteMs() * 0.7), noteMs());
         toneDelay = nt0.toneDelay; iconDelay = nt0.iconDelay; iconDur = nt0.iconDur;
       }
-      const hasIconAnim = step.type === 'note' && !isUnison;
-      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, hasIconAnim, toneDelay, iconDelay, iconDur, index: i });
+      segs.push({ step, startMs: t, durMs, slideMs, up, isUnison, toneDelay, iconDelay, iconDur, index: i });
       t += durMs;
     }
     return { segs, totalMs: t };
@@ -1891,45 +1919,55 @@
 
   // ----- パネル描画（note / interval / blank） -----
   function drawNotePanel(ctx, seg, localMs, w, h, showText, elapsedMs) {
+    // 背景（すりガラス）だけ。アイコンと度数ラベルは drawIconLayer で中央に固定して重ねる
     drawGlassBg(ctx, w, h, elapsedMs);
-    const d = DEG[seg.step.key];
-    let iconOpacity = 1, iconTranslateY = 0;
-    if (seg.hasIconAnim) {
-      const raw = clamp01((localMs - seg.iconDelay) / seg.iconDur);
-      const e = easeIcon(raw);
-      iconOpacity = e;
-      const dirSign = seg.up ? 1 : -1;
-      iconTranslateY = (1 - e) * 40 * dirSign * EXPORT_SCALE;
-    }
+  }
+
+  // アイコン＋度数ラベルを画面中央に固定して描く（背景パネルのスライドとは独立）
+  function drawIconAndLabel(ctx, step, w, h, opacity, dy, showText) {
+    const d = DEG[step.key];
     const iconSize = GLYPH_SIZE * EXPORT_SCALE;
     const iconCenterY = h * 0.44;
-    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, iconOpacity, iconTranslateY);
-    if (showText) {
-      ctx.save();
-      ctx.fillStyle = '#F3F6FF';
+    drawGlyph(ctx, d.shape, d.filled, '#F3F6FF', w / 2, iconCenterY, iconSize, opacity, dy);
+    if (!showText) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = '#F3F6FF';
+    ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
+    ctx.textBaseline = 'middle';
+    const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE + dy;
+    const oct = octLabel(step.oct);
+    if (!oct) {
+      ctx.textAlign = 'center';
+      ctx.fillText(step.key, w / 2, labelY);
+    } else {
+      // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
+      const keyW = ctx.measureText(step.key).width;
+      const gap = 8 * EXPORT_SCALE;
+      const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
+      ctx.font = badgeFont;
+      const badgeW = ctx.measureText(oct).width;
+      const startX = w / 2 - (keyW + gap + badgeW) / 2;
+      ctx.textAlign = 'left';
       ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
-      ctx.textBaseline = 'middle';
-      const labelY = iconCenterY + iconSize / 2 + 34 * EXPORT_SCALE;
-      const oct = octLabel(seg.step.oct);
-      if (!oct) {
-        ctx.textAlign = 'center';
-        ctx.fillText(seg.step.key, w / 2, labelY);
-      } else {
-        // 記号の右に小さくオクターブ（+1/−1）を添える。全体が中央に来るよう幅を測って配置する
-        const keyW = ctx.measureText(seg.step.key).width;
-        const gap = 8 * EXPORT_SCALE;
-        const badgeFont = `700 ${Math.round(14 * EXPORT_SCALE)}px sans-serif`;
-        ctx.font = badgeFont;
-        const badgeW = ctx.measureText(oct).width;
-        const startX = w / 2 - (keyW + gap + badgeW) / 2;
-        ctx.textAlign = 'left';
-        ctx.font = `800 ${Math.round(26 * EXPORT_SCALE)}px sans-serif`;
-        ctx.fillText(seg.step.key, startX, labelY);
-        ctx.font = badgeFont;
-        ctx.globalAlpha = 0.8;
-        ctx.fillText(oct, startX + keyW + gap, labelY);
-      }
-      ctx.restore();
+      ctx.fillText(step.key, startX, labelY);
+      ctx.font = badgeFont;
+      ctx.globalAlpha = opacity * 0.8;
+      ctx.fillText(oct, startX + keyW + gap, labelY);
+    }
+    ctx.restore();
+  }
+
+  function drawIconLayer(ctx, seg, prevSeg, localMs, w, h, showText) {
+    if (seg.step.type === 'note') {
+      // 発音の瞬間に表示が完了するフェードイン。直前の音からの動きの向きに16pxだけ寄せた位置から（同音は動きなし）
+      const e = easeIcon(clamp01((localMs - seg.iconDelay) / Math.max(1, seg.iconDur)));
+      const dy = seg.isUnison ? 0 : (1 - e) * 16 * (seg.up ? 1 : -1) * EXPORT_SCALE;
+      if (e > 0.001) drawIconAndLabel(ctx, seg.step, w, h, e, dy, showText);
+    } else if (prevSeg && prevSeg.step.type === 'note' && seg.slideMs > 0 && localMs < seg.slideMs) {
+      // インターバル等へ切り替わる間、直前のアイコンを背景に合わせて消す
+      const o = 1 - easeFade(localMs / seg.slideMs);
+      if (o > 0.001) drawIconAndLabel(ctx, prevSeg.step, w, h, o, 0, showText);
     }
   }
 
@@ -2074,6 +2112,7 @@
     } else {
       drawPanel(ctx, seg, localMs, EXPORT_W, EXPORT_H, showText, elapsedMs);
     }
+    drawIconLayer(ctx, seg, prevSeg, localMs, EXPORT_W, EXPORT_H, showText);
     drawProgressBarExport(ctx, clampedElapsed, bars);
   }
 
