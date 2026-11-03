@@ -594,8 +594,8 @@
     { key: '④', semitone: 5,  shape: 'square',    filled: false },
     { key: '♭5', semitone: 6, shape: 'circle',    filled: true  },
     { key: '⑤', semitone: 7,  shape: 'circle',    filled: false },
-    { key: '♭6', semitone: 8, shape: 'moonThick', filled: true  },
-    { key: '⑥', semitone: 9,  shape: 'moonThin',  filled: false },
+    { key: '♭6', semitone: 8, shape: 'moon',      filled: true  },
+    { key: '⑥', semitone: 9,  shape: 'moon',      filled: false },
     { key: '♭7', semitone: 10,shape: 'diamond',   filled: true  },
     { key: '⑦', semitone: 11, shape: 'diamond',   filled: false },
     { key: '⑧', semitone: 12, shape: 'star',      filled: false },
@@ -665,8 +665,7 @@
     square:    'M16 16 H84 V84 H16 Z',
     circle:    'M10 50 A40 40 0 1 0 90 50 A40 40 0 1 0 10 50 Z',
     diamond:   'M50 8 L92 50 L50 92 L8 50 Z',
-    moonThick: crescentPath(42, 31, 21),
-    moonThin:  crescentPath(42, 38, 17),
+    moon:      crescentPath(42, 31, 21),
   };
   function glyphSVG(shape, filled, color) {
     const fill = filled ? color : 'none';
