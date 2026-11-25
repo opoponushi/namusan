@@ -499,7 +499,7 @@
   /* 同音のリピート復帰：暗転してから静かに戻る（横には動かさない） */
   .blackout-layer {
     position: absolute; inset: 0; pointer-events: none;
-    background: #000;
+    background: #1E293B; /* 実際の色は panelEl で完全1度のグラデーションを当てる */
     animation: blackoutFade var(--wo-dur, 400ms) cubic-bezier(.2,.6,.3,1) forwards;
   }
   @keyframes blackoutFade { from { opacity: 1; } to { opacity: 0; } }
@@ -603,7 +603,7 @@
   const DEG = Object.fromEntries(DEGREES.map(d => [d.key, d]));
 
   const INTERVALS = [
-    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'ブラック（ブラックアウト）', grad: ['#000000','#020204','#05060B','#0A0C14'], text:'#fff', nuance:'音が移動していない（同じ音のまま）' },
+    { st: 0,  name: '完全1度（ユニゾン）',        colorName: 'スレートグレー（基準色）', grad: ['#64748B','#414F63','#303C4F','#1E293B'], text:'#fff', nuance:'音が移動していない（同じ音のまま）' },
     { st: 1,  name: '短2度',                       colorName: 'ロイヤルブルー', grad: ['#3B82F6','#2359CB','#1744B5','#0B2F9F'], text:'#fff', nuance:'最も近い、ぶつかりの音（半音）' },
     { st: 2,  name: '長2度',                       colorName: 'バイオレット', grad: ['#A78BFA','#9070E1','#7A54C8','#6339AE','#4C1D95'], text:'#fff', nuance:'明るくはっきりとした上昇' },
     { st: 3,  name: '短3度',                       colorName: 'マゼンタ', grad: ['#F472B6','#D35CA6','#B24696','#913085','#701A75'], text:'#fff', nuance:'哀しく神秘的な暗さ' },
@@ -817,7 +817,7 @@
       el.className = 'panel panel-blank';
       if (step.blackout) {
         // 最後のノーツと最初のノーツが同音のリピート：横には動かさず、暗転してから静かに戻る
-        el.innerHTML = `<div class="blackout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms"></div>`;
+        el.innerHTML = `<div class="blackout-layer" style="--wo-dur:${Math.round(durationMs || 320)}ms;background:${radialGrad(IV[0].grad)}"></div>`;
         return el;
       }
       // ノーツと同様の長さで表示するので、線状の光も横向きで最大強度にして存在感を出す
